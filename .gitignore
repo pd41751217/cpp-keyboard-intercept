@@ -1,0 +1,15 @@
+node_modules/
+.angular
+.nx
+dist
+tmp
+logs
+build/
+/release
+vite.config.*.timestamp*
+
+*.log
+**/*.log
+.env
+build_Win32
+build_x64

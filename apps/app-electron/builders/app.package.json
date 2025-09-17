@@ -1,0 +1,20 @@
+{
+  "name": "cpp-demo",
+  "version": "1.0.1",
+  "main": "./src/main.js",
+  "description": "Cpp Demo",
+  "icon": "src/assets/favicon.png",
+  "dependencies": {
+    "electron-devtools-installer": "^3.2.0",
+    "rxjs": "7.8.1",
+    "winston": "^3.17.0",
+    "winreg": "^1.2.5",
+    "electron-dl": "^3.5.0",
+    "radash": "^12.1.0",
+    "lodash": "^4.17.21",
+    "ws": "^8.18.0",
+    "electron-updater": "^6.3.9",
+    "mkdirp": "^3.0.1",
+    "axios": "^1.6.0"
+  }
+}

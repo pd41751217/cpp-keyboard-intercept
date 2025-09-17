@@ -1,0 +1,32 @@
+{
+  "name": "app-electron",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "app-electron/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "nx run app-electron:run ",
+          "nx run app-electron:copy-natives",
+          "wait-on tcp:4100 && wait-on dist/apps/app-electron/public && electron dist/apps/app-electron/src/main.js --serve"
+        ],
+        "cwd": "."
+      }
+    },
+    "run": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["tsc -p apps/app-electron/tsconfig.json "]
+      }
+    },
+    "copy-natives": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["wait-on dist/apps/app-electron && node apps/app-electron/tasks/copy-natives.js"]
+      }
+    }
+  }
+}

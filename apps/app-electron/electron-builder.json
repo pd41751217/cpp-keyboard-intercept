@@ -1,0 +1,30 @@
+{
+  "asar": true,
+  "directories": {
+    "output": "release/",
+    "app": "dist/apps/app-electron"
+  },
+  "files": ["**/*", "!**/*.ts", "!*.map", "!package.json", "!package-lock.json"],
+  "extraResources": [
+    {
+      "from": "dist/apps/app-electron/browser",
+      "to": "browser",
+      "filter": ["**/*"]
+    }
+  ],
+  "win": {
+    "icon": "dist/apps/app-electron/browser/assets/icons",
+    "target": ["portable"]
+  },
+  "portable": {
+    "splashImage": "dist/apps/app-electron/browser/assets/icons/electron.bmp"
+  },
+  "mac": {
+    "icon": "dist/apps/app-electron/browser/assets/icons",
+    "target": ["dmg"]
+  },
+  "linux": {
+    "icon": "dist/apps/app-electron/browser/assets/icons",
+    "target": ["AppImage"]
+  }
+}

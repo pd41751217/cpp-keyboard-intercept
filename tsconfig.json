@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {}
+  },
+  "files": [],
+  "include": [],
+  "references": [
+    {
+      "path": "./tsconfig.base.json"
+    }
+  ]
+}

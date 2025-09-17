@@ -1,0 +1,45 @@
+{
+  "name": "renderer-window",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/renderer-window/src",
+  "tags": [],
+  "// targets": "to see all targets run: nx show project renderer-window --web",
+  "targets": {
+    "build": {
+      "executor": "@nx/vite:build",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/app-electron/renderer-window",
+        "deleteOutputPath": false
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production",
+          "baseHref": "./"
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nx/vite:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "renderer-window:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "renderer-window:build:development",
+          "hmr": true
+        },
+        "production": {
+          "buildTarget": "renderer-window:build:production",
+          "hmr": false
+        }
+      }
+    }
+  }
+}
