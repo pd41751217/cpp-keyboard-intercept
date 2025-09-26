@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen, shell, globalShortcut, ipcMain } from 'electron';
 import { Subject, interval } from 'rxjs';
 import { Subscription } from 'rxjs/internal/Subscription';
 import { filter, first } from 'rxjs/operators';
@@ -13,15 +13,21 @@ const overlayApiLib = require('../../../public/overlay-api.node') as OverlayNode
 const WindowDefaultOptions: Electron.BrowserWindowConstructorOptions = {
   x: 0,
   y: 0,
-  height: 1080,
-  width: 1920,
+  height: 730,
+  width: 1000,
   frame: false,
   show: false,
   transparent: true,
   resizable: false,
+  alwaysOnTop: true, // Keep window on top to receive keyboard events
+  skipTaskbar: true, // Don't show in taskbar
   webPreferences: {
     // TODO: Comment this to use the shared texture
     offscreen: true,
+    nodeIntegration: true,
+    contextIsolation: false,
+    // Allow popups and dropdowns to render properly
+    webSecurity: false,
     // TODO: Uncomment this to share the texture with the overlay-api
     // offscreen: {
     //   useSharedTexture: true,
@@ -62,14 +68,22 @@ export class OverlayApiLib {
   private keyMappings = new Map<number, number>(); // originalKey → newKey
   private blockedKeys = new Set<number>();
   private interceptMode: 'block_and_replace' | 'block_only' | 'monitor' | 'selective_remap' = 'monitor';
+  
+  // Global hotkey handling
+  private homeKeyCode = 36; // VK_HOME
+  private endKeyCode = 35;  // VK_END
 
   public async init(): Promise<void> {
+    console.log( 'init', this.isStarted);
     if (!this.isStarted) {
       this.startOverlay();
 
+      this.setCallbackEvents();
+
       await this.createRenderWindow();
 
-      this.setCallbackEvents();
+      // Listen for settings from renderer to apply keyboard config
+      this.registerSettingsIpc();
 
       this.isStarted = true;
     }
@@ -80,9 +94,14 @@ export class OverlayApiLib {
     this.overlayApi.start();
   }
 
-  public deinit(): void {}
+  public deinit(): void {
+    // Unregister global shortcuts
+    globalShortcut.unregisterAll();
+  }
+
 
   public startIntercept(): void {
+    console.log('Starting input intercept...');
     this.overlayApi.sendCommand({
       command: 'input.intercept',
       intercept: true,
@@ -100,23 +119,23 @@ export class OverlayApiLib {
     this.overlayApi.setEventCallback(
       (
         event: string,
-        payload: Partial<{
-          windowId?: number;
-          focusWindowId?: number;
-          message?: string;
-          pid?: number;
-          width?: number;
-          height?: number;
-          keyCode?: number;
-          modifiers?: number;
-          originalKey?: number;
-          isDown?: boolean;
-        }>,
+        payload: any,
       ) => {
-        console.log(`overlay: event ${event} payload ${JSON.stringify(payload)}`);
+        //console.log(`overlay: event ${event} payload ${JSON.stringify(payload)}`);
         if (event === 'game.input') {
-          if (payload.windowId) {
-            console.log('input', payload.windowId);
+          if (payload.windowId !== undefined) {
+            const target = BrowserWindow.fromId(payload.windowId);
+            if (target) {
+              const inputEvent = this.overlayApi.translateInputEvent(payload as any);
+              if (inputEvent) {
+                // Apply DPI scaling compensation similar to goverlay
+                const display = screen.getDisplayMatching(target.getBounds());
+                const scale = display?.scaleFactor || 1;
+                if ('x' in inputEvent) inputEvent.x = Math.round(inputEvent.x / scale);
+                if ('y' in inputEvent) inputEvent.y = Math.round(inputEvent.y / scale);
+                target.webContents.sendInputEvent(inputEvent as any);
+              }
+            }
           }
         } else if (event === 'game.keyboard.down') {
           if (payload.keyCode !== undefined) {
@@ -155,8 +174,12 @@ export class OverlayApiLib {
             console.log('focus', payload.focusWindowId);
           }
         } else if (event === 'game.window.focused') {
-          if (payload.focusWindowId) {
-            console.log('focus', payload.focusWindowId);
+          if (payload.focusWindowId !== undefined) {
+            BrowserWindow.getAllWindows().forEach((w) => w.blurWebView());
+            const focusWin = BrowserWindow.fromId(payload.focusWindowId);
+            if (focusWin) {
+              focusWin.focusOnWebView();
+            }
           }
         } else if (event === 'game.hook') {
           if (payload.pid) {
@@ -183,7 +206,7 @@ export class OverlayApiLib {
             console.log('game.process', payload.pid);
           }
         } else if (event === 'graphics.fps') {
-          console.log('graphics.fps', payload);
+          //console.log('graphics.fps', payload);
         } else if (event === 'graphics.window') {
           if (payload.width && payload.height) {
             console.log('graphics.window', payload.width, payload.height);
@@ -193,6 +216,17 @@ export class OverlayApiLib {
             if (payload.width !== this.width || payload.height !== this.height) {
               console.log('graphics.window.event.resize', payload.width, payload.height);
             }
+          }
+        } else if (event === 'game.input.intercept') {
+          console.log('game.input.intercept', payload?.intercepting);
+        } else if (event === 'game.hotkey.down') {
+          console.log('In-game hotkey pressed:', payload?.name);
+          if (payload?.name === 'overlay.show') {
+            console.log('Home key pressed in game - showing overlay');
+            this.showOverlay();
+          } else if (payload?.name === 'overlay.hide') {
+            console.log('End key pressed in game - hiding overlay');
+            this.hideOverlay();
           }
         } else {
           console.log(`overlay: event ${event} info ${JSON.stringify(payload)}`);
@@ -366,6 +400,21 @@ export class OverlayApiLib {
     window.on('closed', () => {
       delete this.windows[windowId];
     });
+    window.webContents.setWindowOpenHandler(({ url }) => {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    });
+
+    if (global.DEBUG) {
+      window.webContents.on(
+        "before-input-event",
+        (event: Electron.Event, input: Electron.Input) => {
+          if (input.key === "F12" && input.type === "keyDown") {
+            window.webContents.openDevTools();
+          }
+        }
+      );
+    }
 
     return window;
   }
@@ -377,26 +426,30 @@ export class OverlayApiLib {
     captionHeight: number = 0,
     transparent: boolean = false,
   ): BrowserWindow {
+    const bounds = window.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const scale = display?.scaleFactor || 1;
+
     this.overlayApi.addWindow(window.id, {
       name,
       transparent,
       resizable: window.isResizable(),
-      maxWidth: 2000,
-      maxHeight: 2000,
-      minWidth: 20,
-      minHeight: 20,
+      maxWidth: window.isResizable() ? display.bounds.width : bounds.width,
+      maxHeight: window.isResizable() ? display.bounds.height : bounds.height,
+      minWidth: window.isResizable() ? 100 : bounds.width,
+      minHeight: window.isResizable() ? 100 : bounds.height,
       nativeHandle: window.getNativeWindowHandle().readUInt32LE(0),
       rect: {
-        x: 0,
-        y: 0,
-        width: 1920,
-        height: 1080,
+        x: bounds.x,
+        y: bounds.y,
+        width: Math.floor(bounds.width * scale),
+        height: Math.floor(bounds.height * scale),
       },
       caption: {
-        left: dragborder,
-        right: dragborder,
-        top: dragborder,
-        height: captionHeight,
+        left: Math.floor(dragborder * scale),
+        right: Math.floor(dragborder * scale),
+        top: Math.floor(dragborder * scale),
+        height: Math.floor(captionHeight * scale),
       },
       dragBorderWidth: dragborder,
     });
@@ -438,12 +491,49 @@ export class OverlayApiLib {
       window.focusOnWebView();
     });
 
+    // Keep native window rect in sync on move/resize
+    const sendBounds = () => {
+      const b = window.getBounds();
+      const d = screen.getDisplayMatching(b);
+      const s = d?.scaleFactor || 1;
+      this.overlayApi.sendWindowBounds(window.id, {
+        rect: {
+          x: b.x,
+          y: b.y,
+          width: Math.floor(b.width * s),
+          height: Math.floor(b.height * s),
+        },
+      });
+    };
+    window.on('move', sendBounds);
+    window.on('resize', sendBounds);
+
     window.on('closed', () => {
       this.overlayApi.closeWindow(window.id);
       const windowRef = this.windows[window.id];
       if (windowRef) {
         windowRef.ref.close();
       }
+    });
+
+    // Mirror goverlay: forward cursor changes to native (improves pointer feedback)
+    window.webContents.on('cursor-changed', (event, type) => {
+      let cursor = '';
+      switch (type) {
+        case 'default': cursor = 'IDC_ARROW'; break;
+        case 'pointer': cursor = 'IDC_HAND'; break;
+        case 'crosshair': cursor = 'IDC_CROSS'; break;
+        case 'text': cursor = 'IDC_IBEAM'; break;
+        case 'wait': cursor = 'IDC_WAIT'; break;
+        case 'help': cursor = 'IDC_HELP'; break;
+        case 'move': cursor = 'IDC_SIZEALL'; break;
+        case 'nwse-resize': cursor = 'IDC_SIZENWSE'; break;
+        case 'nesw-resize': cursor = 'IDC_SIZENESW'; break;
+        case 'ns-resize': cursor = 'IDC_SIZENS'; break;
+        case 'ew-resize': cursor = 'IDC_SIZEWE'; break;
+        case 'none': cursor = ''; break;
+      }
+      this.overlayApi.sendCommand({ command: 'cursor', cursor });
     });
 
     return window;
@@ -454,11 +544,39 @@ export class OverlayApiLib {
       const window = this.createWindow(AppWindows.MAIN_WINDOW, WindowDefaultOptions);
       await window.loadURL('http://localhost:4100');
 
-      this.renderWindow = this.addOverlayWindow(WindowsPlacement.MAIN_WINDOW, window, 0, 20);
+      this.renderWindow = this.addOverlayWindow(WindowsPlacement.MAIN_WINDOW, window, 0, 20, true);
+      
+      // Add keyboard event handling for Home/End keys
+      //this.setupKeyboardShortcuts(window);
     } catch (error) {
       console.error(`overlay: Messages UI error ${(error as Error).message}`);
       throw error;
     }
+  }
+
+  private setupKeyboardShortcuts(window: Electron.BrowserWindow): void {
+    // Handle keyboard events in the main process
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown') {
+        if (input.key === 'Home') {
+          // Show entire overlay root (video + UI)
+          window.webContents.executeJavaScript(`
+            const root = document.getElementById('overlay-root');
+            if (root) {
+              root.style.display = 'block';
+            }
+          `);
+        } else if (input.key === 'End') {
+          // Hide entire overlay root (video + UI)
+          window.webContents.executeJavaScript(`
+            const root = document.getElementById('overlay-root');
+            if (root) {
+              root.style.display = 'none';
+            }
+          `);
+        }
+      }
+    });
   }
 
   // ==============================
@@ -543,10 +661,19 @@ export class OverlayApiLib {
       this.keyMappings.forEach((newKey, originalKey) => {
         mappings[originalKey] = newKey;
       });
-      this.overlayApi.sendCommand({
-        command: 'keyboard.remap',
-        mappings: mappings,
-      });
+      console.log('[syncKeyboardConfig] Sending mappings:', mappings);
+      console.log('[syncKeyboardConfig] Calling overlayApi.sendCommand...');
+      try {
+        this.overlayApi.sendCommand({
+          command: 'keyboard.remap',
+          mappings: mappings,
+        });
+        console.log('[syncKeyboardConfig] sendCommand completed successfully');
+      } catch (error) {
+        console.error('[syncKeyboardConfig] sendCommand failed:', error);
+      }
+    } else {
+      console.log('[syncKeyboardConfig] No mappings to send');
     }
 
     // Send blocked keys
@@ -555,6 +682,178 @@ export class OverlayApiLib {
         command: 'keyboard.block',
         blockedKeys: Array.from(this.blockedKeys),
       });
+    }
+  }
+
+  // Apply settings from renderer
+  private registerSettingsIpc(): void {
+    ipcMain.removeAllListeners('overlay:apply-settings');
+    ipcMain.on('overlay:apply-settings', (event, settings: { mappings: Array<{ sourceKey: string; mode: string; targetKey: string }> }) => {
+      try {
+        this.applyKeyboardSettings(settings);
+      } catch (e) {
+        console.error('Failed to apply settings:', e);
+      }
+    });
+  }
+
+  private applyKeyboardSettings(settings: { mappings: Array<{ sourceKey: string; mode: string; targetKey: string }> }): void {
+    // Clear current config
+    this.keyMappings.clear();
+    this.blockedKeys.clear();
+
+    const toVk = (name?: string): number | null => (name ? this.mapKeyNameToVirtualKey(name) : null);
+
+    console.log('[KeyboardSettings] Processing mappings:', settings?.mappings?.length || 0);
+
+    // Separate keys by mode
+    const remapMappings: Record<number, number> = {};
+    const blockedKeys: number[] = [];
+    const passedKeys: number[] = [];
+
+    for (const m of settings?.mappings || []) {
+      const sourceVk = toVk(m.sourceKey);
+      if (!sourceVk) {
+        console.log('[KeyboardSettings] Invalid source key:', m.sourceKey);
+        continue;
+      }
+
+      const mode = (m.mode || '').toLowerCase();
+      console.log('[KeyboardSettings] Processing:', m.sourceKey, '->', m.targetKey, 'mode:', mode);
+      
+      if (mode === 'mapping' || mode === 'remap') {
+        const targetVk = toVk(m.targetKey);
+        if (targetVk) {
+          remapMappings[sourceVk] = targetVk;
+          this.keyMappings.set(sourceVk, targetVk);
+          console.log('[KeyboardSettings] Added mapping:', sourceVk, '->', targetVk);
+        } else {
+          console.log('[KeyboardSettings] Invalid target key:', m.targetKey);
+        }
+      } else if (mode === 'block') {
+        blockedKeys.push(sourceVk);
+        this.blockedKeys.add(sourceVk);
+        console.log('[KeyboardSettings] Added blocked key:', sourceVk);
+      } else if (mode === 'pass') {
+        passedKeys.push(sourceVk);
+        console.log('[KeyboardSettings] Added passed key:', sourceVk);
+      } else {
+        console.log('[KeyboardSettings] Unknown mode:', m.mode);
+        // monitor/ignore → no action
+      }
+    }
+
+    // Send remap mappings to C++ DLL
+    if (Object.keys(remapMappings).length > 0) {
+      try {
+        this.overlayApi.sendCommand({
+          command: 'keyboard.remap',
+          mappings: remapMappings
+        });
+        console.log('[KeyboardSettings] Sent remap mappings to C++ DLL');
+      } catch (error) {
+        console.error('[KeyboardSettings] Failed to send remap mappings:', error);
+      }
+    }
+
+    // Send blocked keys to C++ DLL
+    if (blockedKeys.length > 0) {
+      try {
+        this.overlayApi.sendCommand({
+          command: 'keyboard.block',
+          blockedKeys: blockedKeys
+        });
+        console.log('[KeyboardSettings] Sent blocked keys to C++ DLL:', blockedKeys);
+      } catch (error) {
+        console.error('[KeyboardSettings] Failed to send blocked keys:', error);
+      }
+    }
+
+    // Send passed keys to C++ DLL
+    if (passedKeys.length > 0) {
+      try {
+        this.overlayApi.sendCommand({
+          command: 'keyboard.pass',
+          passedKeys: passedKeys
+        });
+        console.log('[KeyboardSettings] Sent passed keys to C++ DLL:', passedKeys);
+      } catch (error) {
+        console.error('[KeyboardSettings] Failed to send passed keys:', error);
+      }
+    }
+
+    // Use selective_remap so native uses both maps and blocks
+    this.setInterceptMode('selective_remap');
+    this.syncKeyboardConfig();
+  }
+
+  // Map UI key names to Win32 virtual-key codes
+  private mapKeyNameToVirtualKey(name: string): number | null {
+    const n = name.trim();
+    const upper = n.toUpperCase();
+    const vk: Record<string, number> = {
+      'BACKSPACE': 0x08, 'TAB': 0x09, 'ENTER': 0x0D, 'RETURN': 0x0D, 'SHIFT': 0x10, 'CTRL': 0x11, 'CONTROL': 0x11,
+      'ALT': 0x12, 'PAUSE': 0x13, 'CAPSLOCK': 0x14, 'ESC': 0x1B, 'ESCAPE': 0x1B, 'SPACE': 0x20, 'PAGEUP': 0x21,
+      'PAGEDOWN': 0x22, 'END': 0x23, 'HOME': 0x24, 'LEFT': 0x25, 'UP': 0x26, 'RIGHT': 0x27, 'DOWN': 0x28,
+      'PRINTSCREEN': 0x2C, 'INSERT': 0x2D, 'DELETE': 0x2E,
+      'NUMLOCK': 0x90, 'SCROLLLOCK': 0x91,
+      'VOLUMEUP': 0xAF, 'VOLUMEDOWN': 0xAE, 'VOLUMEMUTE': 0xAD,
+      'MEDIASTOP': 0xB2, 'MEDIAPREV': 0xB1, 'MEDIANEXT': 0xB0, 'MEDIAPLAY': 0xB3, 'MEDIAPAUSE': 0xB3,
+      'WIN': 0x5B, 'APPS': 0x5D,
+    };
+
+    // Letters A-Z
+    if (upper.length === 1 && upper >= 'A' && upper <= 'Z') {
+      return upper.charCodeAt(0);
+    }
+    // Numbers 0-9 (top row)
+    if (/^[0-9]$/.test(upper)) {
+      return 0x30 + parseInt(upper, 10);
+    }
+    // Function keys F1-F24
+    const fMatch = /^F(\d{1,2})$/.exec(upper);
+    if (fMatch) {
+      const idx = parseInt(fMatch[1], 10);
+      if (idx >= 1 && idx <= 24) return 0x70 + (idx - 1);
+    }
+    // Numpad keys
+    const npMatch = /^NUMPAD(\d)$/.exec(upper);
+    if (npMatch) {
+      return 0x60 + parseInt(npMatch[1], 10);
+    }
+    const special: Record<string, number> = {
+      'NUMPADMULTIPLY': 0x6A, 'NUMPADADD': 0x6B, 'NUMPADSEPARATOR': 0x6C, 'NUMPADSUBTRACT': 0x6D,
+      'NUMPADDECIMAL': 0x6E, 'NUMPADDIVIDE': 0x6F,
+    };
+    if (special[upper] !== undefined) return special[upper];
+
+    // Aliases from UI names
+    const aliases: Record<string, string> = {
+      'PAGE UP': 'PAGEUP', 'PAGE DOWN': 'PAGEDOWN', 'ARROWLEFT': 'LEFT', 'ARROWRIGHT': 'RIGHT', 'ARROWUP': 'UP', 'ARROWDOWN': 'DOWN',
+    };
+    const alias = aliases[upper];
+    if (alias && vk[alias] !== undefined) return vk[alias];
+    if (vk[upper] !== undefined) return vk[upper];
+    return null;
+  }
+
+  // Show overlay window
+  private showOverlay(): void {
+    if (this.renderWindow) {
+      console.log('Sending IPC overlay:show');
+      this.renderWindow.webContents.send('overlay:show');
+    } else {
+      console.log('Render window not available for show overlay');
+    }
+  }
+
+  // Hide overlay window
+  private hideOverlay(): void {
+    if (this.renderWindow) {
+      console.log('Sending IPC overlay:hide');
+      this.renderWindow.webContents.send('overlay:hide');
+    } else {
+      console.log('Render window not available for hide overlay');
     }
   }
 }

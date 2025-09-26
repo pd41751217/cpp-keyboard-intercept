@@ -348,6 +348,124 @@ std::uint32_t UiApp::gameHeight() const
     return windowClientRect_.bottom - windowClientRect_.top;
 }
 
+static void _appendKeymapLog(const std::string& line)
+{
+    try {
+        std::ofstream ofs("C:\\cpp-keyboard-intercept\\key-remap.log", std::ios::app);
+        if (ofs.is_open()) {
+            ofs << line << "\n";
+        }
+    } catch (...) {
+    }
+}
+
+void UiApp::setKeyRemaps(const std::vector<overlay::KeyRemap>& remaps)
+{
+    std::lock_guard<std::mutex> lock(remapLock_);
+    keyRemaps_.clear();
+    
+    int added = 0;
+    for (const auto& remap : remaps)
+    {
+        if (remap.enabled && remap.fromKey != 0 && remap.toKey != 0)
+        {
+            keyRemaps_[remap.fromKey] = remap.toKey;
+            ++added;
+        }
+    }
+
+    std::ostringstream oss;
+    oss << "[setKeyRemaps] count=" << added << " entries: ";
+    bool first = true;
+    for (const auto& kv : keyRemaps_)
+    {
+        if (!first) oss << ", ";
+        first = false;
+        oss << kv.first << "->" << kv.second;
+    }
+    _appendKeymapLog(oss.str());
+}
+
+void UiApp::clearKeyRemaps()
+{
+    std::lock_guard<std::mutex> lock(remapLock_);
+    keyRemaps_.clear();
+}
+
+bool UiApp::isKeyRemapped(int keyCode) const
+{
+    std::lock_guard<std::mutex> lock(remapLock_);
+    return keyRemaps_.find(keyCode) != keyRemaps_.end();
+}
+
+int UiApp::getRemappedKey(int keyCode) const
+{
+    std::lock_guard<std::mutex> lock(remapLock_);
+    auto it = keyRemaps_.find(keyCode);
+    return (it != keyRemaps_.end()) ? it->second : keyCode;
+}
+
+// Key blocking and passing methods
+void UiApp::setBlockedKeys(const std::set<int>& keys)
+{
+    std::lock_guard<std::mutex> lock(blockPassLock_);
+    blockedKeys_ = keys;
+    
+    std::ostringstream oss;
+    oss << "[setBlockedKeys] count=" << keys.size() << " keys: ";
+    bool first = true;
+    for (int key : keys)
+    {
+        if (!first) oss << ", ";
+        first = false;
+        oss << key;
+    }
+    _appendKeymapLog(oss.str());
+}
+
+void UiApp::setPassedKeys(const std::set<int>& keys)
+{
+    std::lock_guard<std::mutex> lock(blockPassLock_);
+    passedKeys_ = keys;
+    
+    std::ostringstream oss;
+    oss << "[setPassedKeys] count=" << keys.size() << " keys: ";
+    bool first = true;
+    for (int key : keys)
+    {
+        if (!first) oss << ", ";
+        first = false;
+        oss << key;
+    }
+    _appendKeymapLog(oss.str());
+}
+
+void UiApp::clearBlockedKeys()
+{
+    std::lock_guard<std::mutex> lock(blockPassLock_);
+    blockedKeys_.clear();
+    _appendKeymapLog("[clearBlockedKeys] cleared all blocked keys");
+}
+
+void UiApp::clearPassedKeys()
+{
+    std::lock_guard<std::mutex> lock(blockPassLock_);
+    passedKeys_.clear();
+    _appendKeymapLog("[clearPassedKeys] cleared all passed keys");
+}
+
+bool UiApp::isKeyBlocked(int keyCode) const
+{
+    std::lock_guard<std::mutex> lock(blockPassLock_);
+    return blockedKeys_.find(keyCode) != blockedKeys_.end();
+}
+
+bool UiApp::isKeyPassed(int keyCode) const
+{
+    std::lock_guard<std::mutex> lock(blockPassLock_);
+    return passedKeys_.find(keyCode) != passedKeys_.end();
+}
+
 LRESULT CALLBACK UiApp::GetMsgProc(_In_ int nCode, _In_ WPARAM wParam, _In_ LPARAM lParam)
 {
     return HookApp::instance()->uiapp()->hookGetMsgProc(nCode, wParam, lParam);
@@ -369,8 +487,102 @@ LRESULT WINAPI UiApp::WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lPar
 }
 
 
+// Minimal experimental key remap: map 'Q' to 'W' at low level
+// Installs a WH_KEYBOARD_LL hook and synthesizes 'W' while swallowing 'Q'.
+namespace {
+	HHOOK g_llkbHook = nullptr;
+
+	void sendSynthKey(WORD vk, bool isKeyDown, DWORD scanCodeLike = 0) {
+		INPUT input = { 0 };
+		input.type = INPUT_KEYBOARD;
+		input.ki.wVk = vk;
+		input.ki.wScan = static_cast<WORD>(scanCodeLike);
+		input.ki.dwFlags = isKeyDown ? 0 : KEYEVENTF_KEYUP;
+		::SendInput(1, &input, sizeof(INPUT));
+	}
+
+		LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+		if (nCode == HC_ACTION && lParam) {
+			const KBDLLHOOKSTRUCT* p = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
+			if (HookApp::instance()->uiapp() && session::overlayEnabled() && session::graphicsActive()) {
+				// Only apply remap when the game window is in foreground
+				HWND foregroundWindow = GetForegroundWindow();
+				HWND gameWindow = HookApp::instance()->uiapp()->window();
+				if (foregroundWindow == gameWindow) {
+					const bool isKeyDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+					const bool isKeyUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
+					
+					// Handle Home/End keys for overlay show/hide
+					if (isKeyDown) {
+						if (p->vkCode == VK_HOME) {
+							std::ostringstream logLine;
+							logLine << "[LLKB] Home key pressed - showing overlay";
+							_appendKeymapLog(logLine.str());
+							HookApp::instance()->overlayConnector()->sendInGameHotkeyDown("overlay.show");
+							return 1; // Consume the key
+						}
+						else if (p->vkCode == VK_END) {
+							std::ostringstream logLine;
+							logLine << "[LLKB] End key pressed - hiding overlay";
+							_appendKeymapLog(logLine.str());
+							HookApp::instance()->overlayConnector()->sendInGameHotkeyDown("overlay.hide");
+							return 1; // Consume the key
+						}
+					}
+					
+					// Handle key blocking, passing, and remapping
+					if (!HookApp::instance()->uiapp()->isInterceptingInput()) {
+						if (isKeyDown || isKeyUp) {
+                            std::ostringstream logLine;
+							logLine << "[LLKB] vk=" << p->vkCode << (isKeyDown ? " DOWN" : (isKeyUp ? " UP" : ""));
+							_appendKeymapLog(logLine.str());
+                            auto ui = HookApp::instance()->uiapp();
+                            
+                            // Check if key should be blocked (consumed)
+                            if (ui && ui->isKeyBlocked(static_cast<int>(p->vkCode))) {
+                                logLine << "[LLKB] vk=" << p->vkCode << " BLOCKED (consumed)";
+                                _appendKeymapLog(logLine.str());
+                                return 1; // Consume the key - don't pass to game
+                            }
+                            
+                            // Debug: Check if key is in blocked list (for debugging)
+                            if (ui) {
+                                std::ostringstream debugLine;
+                                debugLine << "[LLKB] DEBUG: Checking vk=" << p->vkCode << " isBlocked=" << ui->isKeyBlocked(static_cast<int>(p->vkCode));
+                                _appendKeymapLog(debugLine.str());
+                            }
+                            
+                            // Check if key should be passed (monitor only)
+                            if (ui && ui->isKeyPassed(static_cast<int>(p->vkCode))) {
+                                logLine << "[LLKB] vk=" << p->vkCode << " PASSED (monitored)";
+                                _appendKeymapLog(logLine.str());
+                                // Continue to CallNextHookEx - let the key pass through
+                            }
+                            
+                            // Check if key should be remapped
+                            if (ui && ui->isKeyRemapped(static_cast<int>(p->vkCode))) {
+                                int remapped = ui->getRemappedKey(static_cast<int>(p->vkCode));
+                                logLine << "[LLKB] vk=" << p->vkCode << (isKeyDown ? " DOWN" : (isKeyUp ? " UP" : "")) << " -> " << remapped;
+                                _appendKeymapLog(logLine.str());
+                                sendSynthKey(static_cast<WORD>(remapped), isKeyDown, p->scanCode);
+                                return 1; // Consume original key, send remapped key
+                            }
+						}
+					}
+				}
+			}
+		}
+		// pass through
+		return CallNextHookEx(g_llkbHook, nCode, wParam, lParam);
+	}
+}
+
 LRESULT UiApp::hookWindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
+	if (!g_llkbHook && session::graphicsActive())
+	{
+		g_llkbHook = ::SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandleW(NULL), 0);
+	}
     if (!session::overlayEnabled())
     {
         stopInputIntercept();
@@ -491,6 +703,29 @@ LRESULT UiApp::hookWindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
         if ((Msg >= WM_KEYFIRST && Msg <= WM_KEYLAST)
             || (Msg >= WM_SYSKEYDOWN && Msg <= WM_SYSDEADCHAR))
         {
+            // Only process keyboard events from the target game window
+            if (hWnd != graphicsWindow_)
+            {
+                return CallWindowProc(oldWndProc_, hWnd, Msg, wParam, lParam);
+            }
+
+            // Check for key remapping
+            if (isKeyRemapped(wParam))
+            {
+                int remappedKey = getRemappedKey(wParam);
+                INPUT in = { 0 };
+                in.type = INPUT_KEYBOARD;
+                in.ki.wVk = remappedKey;
+                
+                if (Msg == WM_KEYUP || Msg == WM_SYSKEYUP)
+                {
+                    in.ki.dwFlags = KEYEVENTF_KEYUP;
+                }
+                
+                SendInput(1, &in, sizeof(INPUT));
+                return 0; // consume original key
+            }
+
             bool inputHandled = HookApp::instance()->overlayConnector()->processkeyboardMessage(Msg, wParam, lParam);
             if (inputHandled)
             {
@@ -581,6 +816,30 @@ LRESULT UiApp::hookGetMsgProc(_In_ int nCode, _In_ WPARAM wParam, _In_ LPARAM lP
                 if ((pMsg->message >= WM_KEYFIRST && pMsg->message <= WM_KEYLAST)
                     || (pMsg->message >= WM_SYSKEYDOWN && pMsg->message <= WM_SYSDEADCHAR))
                 {
+                    // Only process keyboard events from the target game window
+                    if (pMsg->hwnd != graphicsWindow_)
+                    {
+                        return CallNextHookEx(msgHook_, nCode, wParam, lParam);
+                    }
+
+				// Check for key remapping
+				if (isKeyRemapped(pMsg->wParam))
+				{
+					int remappedKey = getRemappedKey(pMsg->wParam);
+					INPUT in = { 0 };
+					in.type = INPUT_KEYBOARD;
+					in.ki.wVk = remappedKey;
+					
+					if (pMsg->message == WM_KEYUP || pMsg->message == WM_SYSKEYUP)
+					{
+						in.ki.dwFlags = KEYEVENTF_KEYUP;
+					}
+					
+					SendInput(1, &in, sizeof(INPUT));
+					pMsg->message = WM_NULL; // consume original key
+					return 0;
+				}
+
                     bool inputHandled = HookApp::instance()->overlayConnector()->processkeyboardMessage(pMsg->message, pMsg->wParam, pMsg->lParam);
                     if (inputHandled)
                     {

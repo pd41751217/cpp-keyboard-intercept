@@ -51,16 +51,15 @@ static auto _syncDragResizeBottom = [&](auto& window, std::int32_t /*xdiff*/, st
         curHeight = window->maxHeight;
     window->rect.height = curHeight;
 };
- 
-
-bool isAlwaysInputTransparentWindow(const std::string& name)
-{
-    return name == "OverlayTip" || name == "StatusBar";
-}
 
 bool isAlwaysInputAwareWindow(const std::string& name)
 {
-    return false;
+    return name == "StatusBar";
+}
+
+bool isAlwaysInputTransparentWindow(const std::string& name)
+{
+    return name == "OverlayTip";
 }
 
 OverlayConnector::OverlayConnector()
@@ -274,7 +273,12 @@ bool OverlayConnector::processNCHITTEST(UINT /*message*/, WPARAM /*wParam*/, LPA
         {
             continue;
         }
- 
+
+        if (!isBlockingAll)
+        {
+            if(!isAlwaysInputAwareWindow(window->name))
+                continue;
+        }
 
         if (overlay_game::pointInRect(mousePointInGameClient, window->rect))
         {
@@ -485,7 +489,6 @@ bool OverlayConnector::processMouseMessage(UINT message, WPARAM wParam, LPARAM l
                 continue;
         }
 
-        
         if (overlay_game::pointInRect(mousePointInGameClient, window->rect))
         {
             POINT mousePointinWindowClient = { mousePointInGameClient.x, mousePointInGameClient.y };
@@ -1059,6 +1062,9 @@ break;
             OVERLAY_DISPATCH("command.cursor", CursorCommand);
             OVERLAY_DISPATCH("overlay.hotkey", HotkeyInfo);
             OVERLAY_DISPATCH("command.input.intercept", InputInterceptCommand);
+            OVERLAY_DISPATCH("command.keyremap", KeyRemapCommand);
+            OVERLAY_DISPATCH("command.keyblock", KeyBlockCommand);
+            OVERLAY_DISPATCH("command.keypass", KeyPassCommand);
             OVERLAY_DISPATCH("command.showhide", ShowHideCommand);
         default:
             break;
@@ -1291,6 +1297,35 @@ void OverlayConnector::_onInputInterceptCommand(std::shared_ptr<overlay::InputIn
 
     HookApp::instance()->uiapp()->async([intercept = overlayMsg->intercept]() {
         intercept ? HookApp::instance()->uiapp()->startInputIntercept() : HookApp::instance()->uiapp()->stopInputIntercept();
+    });
+}
+
+void OverlayConnector::_onKeyRemapCommand(std::shared_ptr<overlay::KeyRemapCommand>& overlayMsg)
+{
+    __trace__ << "Setting key remaps, count: " << overlayMsg->remaps.size();
+
+    HookApp::instance()->uiapp()->async([remaps = overlayMsg->remaps]() {
+        HookApp::instance()->uiapp()->setKeyRemaps(remaps);
+    });
+}
+
+void OverlayConnector::_onKeyBlockCommand(std::shared_ptr<overlay::KeyBlockCommand>& overlayMsg)
+{
+    __trace__ << "Setting blocked keys, count: " << overlayMsg->blockedKeys.size();
+
+    HookApp::instance()->uiapp()->async([blockedKeys = overlayMsg->blockedKeys]() {
+        std::set<int> blockedSet(blockedKeys.begin(), blockedKeys.end());
+        HookApp::instance()->uiapp()->setBlockedKeys(blockedSet);
+    });
+}
+
+void OverlayConnector::_onKeyPassCommand(std::shared_ptr<overlay::KeyPassCommand>& overlayMsg)
+{
+    __trace__ << "Setting passed keys, count: " << overlayMsg->passedKeys.size();
+
+    HookApp::instance()->uiapp()->async([passedKeys = overlayMsg->passedKeys]() {
+        std::set<int> passedSet(passedKeys.begin(), passedKeys.end());
+        HookApp::instance()->uiapp()->setPassedKeys(passedSet);
     });
 }
 

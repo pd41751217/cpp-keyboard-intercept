@@ -1,4 +1,8 @@
 #pragma once
+#include "message/gmessage.hpp"
+#include <mutex>
+#include <map>
+#include <set>
 
 
 class UiApp : public Storm::Trackable<>
@@ -19,6 +23,15 @@ class UiApp : public Storm::Trackable<>
 
     std::mutex taskLock_;
     std::deque<std::function<void()>> tasks_;
+
+    // Key remapping configuration
+    mutable std::mutex remapLock_;
+    std::map<int, int> keyRemaps_;  // fromKey -> toKey mapping
+    
+    // Key blocking and passing configuration
+    mutable std::mutex blockPassLock_;
+    std::set<int> blockedKeys_;     // Keys to block (consume)
+    std::set<int> passedKeys_;      // Keys to pass through (monitor only)
 
 #if ALLOW_ASSOC_SYSIME
     HIMC IMC_ = nullptr;
@@ -53,6 +66,20 @@ public:
     bool shouldBlockOrginalCursorViz();
 
     bool isInterceptingInput();
+
+    // Key remapping methods
+    void setKeyRemaps(const std::vector<overlay::KeyRemap>& remaps);
+    void clearKeyRemaps();
+    bool isKeyRemapped(int keyCode) const;
+    int getRemappedKey(int keyCode) const;
+    
+    // Key blocking and passing methods
+    void setBlockedKeys(const std::set<int>& keys);
+    void setPassedKeys(const std::set<int>& keys);
+    void clearBlockedKeys();
+    void clearPassedKeys();
+    bool isKeyBlocked(int keyCode) const;
+    bool isKeyPassed(int keyCode) const;
 
 #if AUTO_INPUT_INTERCEPT
     bool isInterceptingMouseAuto();

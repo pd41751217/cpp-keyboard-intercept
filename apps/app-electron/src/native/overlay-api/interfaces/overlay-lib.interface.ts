@@ -17,8 +17,10 @@ export interface OverlayNodeApi {
   sendCommand(arg: { command: 'input.intercept'; intercept: boolean }): void;
   sendCommand(arg: { command: 'keyboard.remap'; mappings: Record<number, number> }): void;
   sendCommand(arg: { command: 'keyboard.block'; blockedKeys: number[] }): void;
+  sendCommand(arg: { command: 'keyboard.pass'; passedKeys: number[] }): void;
   sendCommand(arg: { command: 'keyboard.mode'; mode: 'block_and_replace' | 'block_only' | 'monitor' | 'selective_remap' }): void;
   sendCommand(arg: { command: 'keyboard.inject'; keyCode: number; modifiers?: number; isDown: boolean }): void;
+  sendCommand(arg: { command: 'hotkey.info'; hotkeys: Array<{ name: string; keyCode: number; ctrl: boolean; shift: boolean; alt: boolean; passthrough: boolean }> }): void;
   addWindow(windowId: number, details: IOverlayWindowDetails): void;
   startGameInputIntercept(): void;
   stopGameInputIntercept(): void;

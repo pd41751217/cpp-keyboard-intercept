@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <iostream>
+#include <fstream>
 #include "ipc/tinyipc.h"
 #include "message/gmessage.hpp"
 #include "utils/win-utils.h"
@@ -444,8 +445,25 @@ public:
     {
         Napi::Env env = info.Env();
 
+        // Log to file
+        try {
+            std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+            if (ofs.is_open()) {
+                ofs << "[NodeAddon] sendCommand called" << std::endl;
+            }
+        } catch (...) {
+        }
+        
         Napi::Object commandInfo = info[0].ToObject();
         std::string command = commandInfo.Get("command").ToString();
+        
+        try {
+            std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+            if (ofs.is_open()) {
+                ofs << "[NodeAddon] Command: " << command << std::endl;
+            }
+        } catch (...) {
+        }
         if (command == "cursor")
         {
             overlay::CursorCommand message;
@@ -467,6 +485,223 @@ public:
             overlay::InputInterceptCommand message;
             message.intercept = commandInfo.Get("intercept").ToBoolean();
 
+            this->_sendMessage(&message);
+        }
+        else if (command == "keyboard.remap")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received keyboard.remap command" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            overlay::KeyRemapCommand message;
+            std::vector<overlay::KeyRemap> remaps;
+            if (commandInfo.Has("mappings"))
+            {
+                Napi::Object mapObj = commandInfo.Get("mappings").ToObject();
+                Napi::Array keys = mapObj.GetPropertyNames();
+                
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] Processing " << keys.Length() << " mappings" << std::endl;
+                    }
+                } catch (...) {
+                }
+                
+                for (uint32_t i = 0; i < keys.Length(); ++i)
+                {
+                    Napi::Value k = keys.Get(i);
+                    int fromKey = std::stoi(k.ToString().Utf8Value());
+                    int toKey = mapObj.Get(k).ToNumber();
+                    overlay::KeyRemap r;
+                    r.fromKey = fromKey;
+                    r.toKey = toKey;
+                    r.enabled = true;
+                    remaps.push_back(r);
+                    
+                    try {
+                        std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                        if (ofs.is_open()) {
+                            ofs << "[NodeAddon] Added remap: " << fromKey << " -> " << toKey << std::endl;
+                        }
+                    } catch (...) {
+                    }
+                }
+            }
+            message.remaps = remaps;
+            
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Sending KeyRemapCommand with " << remaps.size() << " remaps" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            this->_sendMessage(&message);
+        }
+        else if (command == "hotkey.info")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received hotkey.info command" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            overlay::HotkeyInfo message;
+            std::vector<overlay::Hotkey> hotkeys;
+            
+            if (commandInfo.Has("hotkeys"))
+            {
+                Napi::Array hotkeyArray = commandInfo.Get("hotkeys").As<Napi::Array>();
+                
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] Processing " << hotkeyArray.Length() << " hotkeys" << std::endl;
+                    }
+                } catch (...) {
+                }
+                
+                for (uint32_t i = 0; i < hotkeyArray.Length(); ++i)
+                {
+                    Napi::Object hotkeyObj = hotkeyArray.Get(i).ToObject();
+                    overlay::Hotkey hotkey;
+                    hotkey.name = hotkeyObj.Get("name").ToString();
+                    hotkey.keyCode = hotkeyObj.Get("keyCode").ToNumber();
+                    hotkey.ctrl = hotkeyObj.Get("ctrl").ToBoolean();
+                    hotkey.shift = hotkeyObj.Get("shift").ToBoolean();
+                    hotkey.alt = hotkeyObj.Get("alt").ToBoolean();
+                    hotkey.passthrough = hotkeyObj.Get("passthrough").ToBoolean();
+                    hotkeys.push_back(hotkey);
+                    
+                    try {
+                        std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                        if (ofs.is_open()) {
+                            ofs << "[NodeAddon] Added hotkey: " << hotkey.name << " (keyCode: " << hotkey.keyCode << ")" << std::endl;
+                        }
+                    } catch (...) {
+                    }
+                }
+            }
+            message.hotkeys = hotkeys;
+            
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Sending HotkeyInfo with " << hotkeys.size() << " hotkeys" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            this->_sendMessage(&message);
+        }
+        else if (command == "keyboard.block")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received keyboard.block command" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            overlay::KeyBlockCommand message;
+            std::vector<int> blockedKeys;
+            
+            if (commandInfo.Has("blockedKeys"))
+            {
+                Napi::Array keyArray = commandInfo.Get("blockedKeys").As<Napi::Array>();
+                
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] Processing " << keyArray.Length() << " blocked keys" << std::endl;
+                    }
+                } catch (...) {
+                }
+                
+                for (uint32_t i = 0; i < keyArray.Length(); ++i)
+                {
+                    int keyCode = keyArray.Get(i).ToNumber();
+                    blockedKeys.push_back(keyCode);
+                    
+                    try {
+                        std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                        if (ofs.is_open()) {
+                            ofs << "[NodeAddon] Added blocked key: " << keyCode << std::endl;
+                        }
+                    } catch (...) {
+                    }
+                }
+            }
+            message.blockedKeys = blockedKeys;
+            
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Sending KeyBlockCommand with " << blockedKeys.size() << " blocked keys" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            this->_sendMessage(&message);
+        }
+        else if (command == "keyboard.pass")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received keyboard.pass command" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            overlay::KeyPassCommand message;
+            std::vector<int> passedKeys;
+            
+            if (commandInfo.Has("passedKeys"))
+            {
+                Napi::Array keyArray = commandInfo.Get("passedKeys").As<Napi::Array>();
+                
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] Processing " << keyArray.Length() << " passed keys" << std::endl;
+                    }
+                } catch (...) {
+                }
+                
+                for (uint32_t i = 0; i < keyArray.Length(); ++i)
+                {
+                    int keyCode = keyArray.Get(i).ToNumber();
+                    passedKeys.push_back(keyCode);
+                    
+                    try {
+                        std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                        if (ofs.is_open()) {
+                            ofs << "[NodeAddon] Added passed key: " << keyCode << std::endl;
+                        }
+                    } catch (...) {
+                    }
+                }
+            }
+            message.passedKeys = passedKeys;
+            
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Sending KeyPassCommand with " << passedKeys.size() << " passed keys" << std::endl;
+                }
+            } catch (...) {
+            }
+            
             this->_sendMessage(&message);
         }
 
@@ -698,6 +933,13 @@ public:
 
             auto modifiersVec = getKeyboardModifiers(wparam, lparam);
 
+            FILE* f = fopen("input1.log", "a");
+            if (f)
+            {
+                fprintf(f, "msg: %u, wparam: %u, lparam: %u\n", msg, wparam, lparam);
+                fclose(f);
+            }
+    
             Napi::Array modifiers = Napi::Array::New(env, modifiersVec.size());
 
             for (auto i = 0; i != modifiersVec.size(); ++i)

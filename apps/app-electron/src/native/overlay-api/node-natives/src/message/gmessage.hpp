@@ -95,6 +95,18 @@ namespace overlay
 
     JSON_AUTO(Hotkey, name, keyCode, ctrl, shift, alt, passthrough)
 
+    struct KeyRemap
+    {
+        int fromKey = 0;
+        int toKey = 0;
+        bool enabled = true;
+
+        KeyRemap() = default;
+        KeyRemap(int from, int to) : fromKey(from), toKey(to), enabled(true) {}
+    };
+
+    JSON_AUTO(KeyRemap, fromKey, toKey, enabled)
+
     struct WindowRect
     {
         int x;
@@ -222,6 +234,30 @@ namespace overlay
     };
 
     JSON_AUTO(InputInterceptCommand, type, intercept)
+
+    struct KeyRemapCommand : public GMessage
+    {
+        GMESSAGE_AUTO("command.keyremap");
+        std::vector<KeyRemap> remaps;
+    };
+
+    JSON_AUTO(KeyRemapCommand, type, remaps)
+
+    struct KeyBlockCommand : public GMessage
+    {
+        GMESSAGE_AUTO("command.keyblock");
+        std::vector<int> blockedKeys;
+    };
+
+    JSON_AUTO(KeyBlockCommand, type, blockedKeys)
+
+    struct KeyPassCommand : public GMessage
+    {
+        GMESSAGE_AUTO("command.keypass");
+        std::vector<int> passedKeys;
+    };
+
+    JSON_AUTO(KeyPassCommand, type, passedKeys)
 
     struct OverlayInit : public GMessage
     {

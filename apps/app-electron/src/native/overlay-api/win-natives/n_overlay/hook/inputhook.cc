@@ -58,6 +58,19 @@ SHORT WINAPI H_GetAsyncKeyState(__in int vKey)
     }
     else
     {
+        // Check for key remapping
+        if (HookApp::instance()->uiapp()->isKeyRemapped(vKey))
+        {
+            int remappedKey = HookApp::instance()->uiapp()->getRemappedKey(vKey);
+            return Windows::OrginalApi::GetAsyncKeyState(remappedKey);
+        }
+        
+        FILE* ff = fopen("input.log", "a");
+        if (ff)
+        {
+            fprintf(ff, "GetAsyncKeyState: vKey=%u\n", vKey);
+            fclose(ff);
+        }
         return Windows::OrginalApi::GetAsyncKeyState(vKey);
     }
 }
@@ -71,6 +84,13 @@ SHORT WINAPI H_GetKeyState(__in int vKey)
     }
     else
     {
+        // Check for key remapping
+        if (HookApp::instance()->uiapp()->isKeyRemapped(vKey))
+        {
+            int remappedKey = HookApp::instance()->uiapp()->getRemappedKey(vKey);
+            return Windows::OrginalApi::GetKeyState(remappedKey);
+        }
+        
         return Windows::OrginalApi::GetKeyState(vKey);
     }
 }
@@ -84,7 +104,39 @@ BOOL WINAPI H_GetKeyboardState(__out_ecount(256) PBYTE lpKeyState)
     }
     else
     {
-        return Windows::OrginalApi::GetKeyboardState(lpKeyState);
+        BOOL result = Windows::OrginalApi::GetKeyboardState(lpKeyState);
+        
+        // Apply key remapping to the keyboard state
+        if (result && lpKeyState)
+        {
+            // Create a copy of the original state
+            BYTE originalState[256];
+            memcpy(originalState, lpKeyState, 256);
+            
+            // Clear the remapped keys in the original positions
+            for (int i = 0; i < 256; i++)
+            {
+                if (HookApp::instance()->uiapp()->isKeyRemapped(i))
+                {
+                    lpKeyState[i] = 0;
+                }
+            }
+            
+            // Set the remapped keys in their new positions
+            for (int i = 0; i < 256; i++)
+            {
+                if (HookApp::instance()->uiapp()->isKeyRemapped(i))
+                {
+                    int remappedKey = HookApp::instance()->uiapp()->getRemappedKey(i);
+                    if (remappedKey >= 0 && remappedKey < 256)
+                    {
+                        lpKeyState[remappedKey] = originalState[i];
+                    }
+                }
+            }
+        }
+        
+        return result;
     }
 }
 
