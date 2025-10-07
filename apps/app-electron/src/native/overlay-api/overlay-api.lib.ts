@@ -204,6 +204,13 @@ export class OverlayApiLib {
         } else if (event === 'game.process') {
           if (payload.pid) {
             console.log('game.process', payload.pid);
+            
+            // Send ingamemenuKey configuration to native layer when game process is detected
+            const app = this.appsManager.getAppByPid(payload.pid);
+            if (app && app.ingamemenuKey !== undefined) {
+              console.log('Sending ingamemenuKey to native layer for game process:', app.ingamemenuKey);
+              this.setInGameMenuKey(app.ingamemenuKey);
+            }
           }
         } else if (event === 'graphics.fps') {
           //console.log('graphics.fps', payload);
@@ -360,7 +367,7 @@ export class OverlayApiLib {
         }
         return;
       }
-      const appAdded = this.appsManager.addApp(hook.id, hook.windowName);
+      const appAdded = this.appsManager.addApp(hook.id, hook.windowName, 0, HookAppStatus.WAITING, hook.ingamemenuKey);
 
       if (appAdded.status === HookAppStatus.INJECTED && appAdded.pid) {
         this.onGameHook(appAdded.pid);
@@ -554,31 +561,6 @@ export class OverlayApiLib {
     }
   }
 
-  private setupKeyboardShortcuts(window: Electron.BrowserWindow): void {
-    // Handle keyboard events in the main process
-    window.webContents.on('before-input-event', (event, input) => {
-      if (input.type === 'keyDown') {
-        if (input.key === 'Home') {
-          // Show entire overlay root (video + UI)
-          window.webContents.executeJavaScript(`
-            const root = document.getElementById('overlay-root');
-            if (root) {
-              root.style.display = 'block';
-            }
-          `);
-        } else if (input.key === 'End') {
-          // Hide entire overlay root (video + UI)
-          window.webContents.executeJavaScript(`
-            const root = document.getElementById('overlay-root');
-            if (root) {
-              root.style.display = 'none';
-            }
-          `);
-        }
-      }
-    });
-  }
-
   // ==============================
   // KEYBOARD MODULE METHODS
   // ==============================
@@ -638,6 +620,14 @@ export class OverlayApiLib {
         isDown: false,
       });
     }, 50);
+  }
+
+  // Send ingamemenuKey configuration to native layer
+  public setInGameMenuKey(keyCode: number): void {
+    this.overlayApi.sendCommand({
+      command: 'game.ingamemenu',
+      keyCode: keyCode,
+    });
   }
 
   // Convenience methods for event subscription

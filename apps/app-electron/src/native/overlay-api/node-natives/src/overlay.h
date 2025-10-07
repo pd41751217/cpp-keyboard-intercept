@@ -704,6 +704,42 @@ public:
             
             this->_sendMessage(&message);
         }
+        else if (command == "game.ingamemenu")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received game.ingamemenu command" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            overlay::InGameMenuCommand message;
+            
+            if (commandInfo.Has("keyCode"))
+            {
+                int keyCode = commandInfo.Get("keyCode").ToNumber();
+                message.keyCode = keyCode;
+                
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] Setting ingamemenuKey: " << keyCode << std::endl;
+                    }
+                } catch (...) {
+                }
+            }
+            
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Sending InGameMenuCommand with keyCode=" << message.keyCode << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            this->_sendMessage(&message);
+        }
 
         return env.Undefined();
     }

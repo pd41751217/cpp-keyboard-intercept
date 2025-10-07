@@ -4,6 +4,9 @@
 #include <map>
 #include <set>
 
+// Forward declaration for global function
+void sendSynthKey(WORD vk, bool isKeyDown, DWORD scanCodeLike);
+
 
 class UiApp : public Storm::Trackable<>
 {
@@ -32,6 +35,10 @@ class UiApp : public Storm::Trackable<>
     mutable std::mutex blockPassLock_;
     std::set<int> blockedKeys_;     // Keys to block (consume)
     std::set<int> passedKeys_;      // Keys to pass through (monitor only)
+    
+    // In-game menu key configuration
+    mutable std::mutex ingamemenuLock_;
+    int ingamemenuKey_ = 0;         // Key to press before showing overlay
 
 #if ALLOW_ASSOC_SYSIME
     HIMC IMC_ = nullptr;
@@ -80,6 +87,16 @@ public:
     void clearPassedKeys();
     bool isKeyBlocked(int keyCode) const;
     bool isKeyPassed(int keyCode) const;
+    
+    // In-game menu key methods
+    void setInGameMenuKey(int keyCode);
+    int getInGameMenuKey() const;
+    
+    // Private method to handle Home key press logic when system is ready
+    void _handleHomeKeyPressWhenReady();
+    
+    // Private method to handle Home key press logic
+    void _handleHomeKeyPress();
 
 #if AUTO_INPUT_INTERCEPT
     bool isInterceptingMouseAuto();

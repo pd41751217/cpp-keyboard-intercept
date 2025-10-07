@@ -7,6 +7,7 @@ export enum HookAppStatus {
 export interface Hook {
   id: string;
   windowName: string;
+  ingamemenuKey?: number;
 }
 
 export interface HookApp {
@@ -14,12 +15,13 @@ export interface HookApp {
   id: string;
   windowName: string;
   status?: HookAppStatus;
+  ingamemenuKey?: number;
 }
 
 export class AppsManager {
   public apps: Record<string, HookApp> = {};
 
-  public addApp(id: string, windowName: string = '', pid: number = 0, status: HookAppStatus = HookAppStatus.WAITING): HookApp {
+  public addApp(id: string, windowName: string = '', pid: number = 0, status: HookAppStatus = HookAppStatus.WAITING, ingamemenuKey?: number): HookApp {
     if (this.apps[id]) {
       return this.apps[id];
     }
@@ -29,6 +31,7 @@ export class AppsManager {
       windowName,
       pid,
       status,
+      ingamemenuKey,
     };
 
     return this.apps[id];

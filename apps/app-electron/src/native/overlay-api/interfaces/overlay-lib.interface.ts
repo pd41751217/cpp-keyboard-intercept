@@ -20,6 +20,7 @@ export interface OverlayNodeApi {
   sendCommand(arg: { command: 'keyboard.pass'; passedKeys: number[] }): void;
   sendCommand(arg: { command: 'keyboard.mode'; mode: 'block_and_replace' | 'block_only' | 'monitor' | 'selective_remap' }): void;
   sendCommand(arg: { command: 'keyboard.inject'; keyCode: number; modifiers?: number; isDown: boolean }): void;
+  sendCommand(arg: { command: 'game.ingamemenu'; keyCode: number }): void;
   sendCommand(arg: { command: 'hotkey.info'; hotkeys: Array<{ name: string; keyCode: number; ctrl: boolean; shift: boolean; alt: boolean; passthrough: boolean }> }): void;
   addWindow(windowId: number, details: IOverlayWindowDetails): void;
   startGameInputIntercept(): void;

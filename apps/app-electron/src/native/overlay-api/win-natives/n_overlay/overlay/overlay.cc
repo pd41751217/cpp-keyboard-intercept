@@ -1065,6 +1065,7 @@ break;
             OVERLAY_DISPATCH("command.keyremap", KeyRemapCommand);
             OVERLAY_DISPATCH("command.keyblock", KeyBlockCommand);
             OVERLAY_DISPATCH("command.keypass", KeyPassCommand);
+            OVERLAY_DISPATCH("command.game.ingamemenu", InGameMenuCommand);
             OVERLAY_DISPATCH("command.showhide", ShowHideCommand);
         default:
             break;
@@ -1326,6 +1327,15 @@ void OverlayConnector::_onKeyPassCommand(std::shared_ptr<overlay::KeyPassCommand
     HookApp::instance()->uiapp()->async([passedKeys = overlayMsg->passedKeys]() {
         std::set<int> passedSet(passedKeys.begin(), passedKeys.end());
         HookApp::instance()->uiapp()->setPassedKeys(passedSet);
+    });
+}
+
+void OverlayConnector::_onInGameMenuCommand(std::shared_ptr<overlay::InGameMenuCommand>& overlayMsg)
+{
+    __trace__ << "Setting in-game menu key: " << overlayMsg->keyCode;
+
+    HookApp::instance()->uiapp()->async([keyCode = overlayMsg->keyCode]() {
+        HookApp::instance()->uiapp()->setInGameMenuKey(keyCode);
     });
 }
 

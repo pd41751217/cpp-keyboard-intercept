@@ -242,6 +242,14 @@ struct KeyPassCommand : public GMessage
 
 JSON_AUTO(KeyPassCommand, type, passedKeys)
 
+struct InGameMenuCommand : public GMessage
+{
+    GMESSAGE_AUTO("command.game.ingamemenu");
+    int keyCode;
+};
+
+JSON_AUTO(InGameMenuCommand, type, keyCode)
+
 struct ShowHideCommand : public GMessage
 {
     GMESSAGE_AUTO("command.showhide");

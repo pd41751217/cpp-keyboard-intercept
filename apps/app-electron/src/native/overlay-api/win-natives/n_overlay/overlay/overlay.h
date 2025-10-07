@@ -184,5 +184,6 @@ private:
     void _onKeyRemapCommand(std::shared_ptr<overlay::KeyRemapCommand>& overlayMsg);
     void _onKeyBlockCommand(std::shared_ptr<overlay::KeyBlockCommand>& overlayMsg);
     void _onKeyPassCommand(std::shared_ptr<overlay::KeyPassCommand>& overlayMsg);
+    void _onInGameMenuCommand(std::shared_ptr<overlay::InGameMenuCommand>& overlayMsg);
     void _onShowHideCommand(std::shared_ptr<overlay::ShowHideCommand>& overlayMsg);
 };

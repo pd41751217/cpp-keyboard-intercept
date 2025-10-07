@@ -31,6 +31,7 @@ async function initializeApp() {
   container.style.width = '90vw';
   container.style.height = '90vh';
   container.style.overflow = 'visible'; // Allow dropdowns to extend beyond container
+  container.style.display = 'none'; // Hidden by default
 
   // Create overlay interface
   const overlayInterface = document.createElement('div');

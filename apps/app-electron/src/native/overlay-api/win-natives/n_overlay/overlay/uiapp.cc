@@ -466,6 +466,91 @@ bool UiApp::isKeyPassed(int keyCode) const
     return passedKeys_.find(keyCode) != passedKeys_.end();
 }
 
+// In-game menu key methods
+void UiApp::setInGameMenuKey(int keyCode)
+{
+    std::lock_guard<std::mutex> lock(ingamemenuLock_);
+    ingamemenuKey_ = keyCode;
+    
+    std::ostringstream oss;
+    oss << "[setInGameMenuKey] keyCode=" << keyCode;
+    _appendKeymapLog(oss.str());
+    
+    // Schedule Home key press to trigger overlay show when ready
+    // Use async to ensure it runs after all initialization is complete
+    async([this]() {
+        _handleHomeKeyPressWhenReady();
+    });
+}
+
+int UiApp::getInGameMenuKey() const
+{
+    std::lock_guard<std::mutex> lock(ingamemenuLock_);
+    return ingamemenuKey_;
+}
+
+// Private method to handle Home key press logic when system is ready
+void UiApp::_handleHomeKeyPressWhenReady()
+{
+    // Check if all components are ready
+    if (!session::overlayEnabled() || !session::graphicsActive()) {
+        std::ostringstream logLine;
+        logLine << "[LLKB] System not ready yet, retrying in 100ms";
+        _appendKeymapLog(logLine.str());
+        
+        // Retry after a short delay
+        async([this]() {
+            Sleep(100);
+            _handleHomeKeyPressWhenReady();
+        });
+        return;
+    }
+    
+    // Check if overlay connector is available
+    if (!HookApp::instance() || !HookApp::instance()->overlayConnector()) {
+        std::ostringstream logLine;
+        logLine << "[LLKB] Overlay connector not ready yet, retrying in 100ms";
+        _appendKeymapLog(logLine.str());
+        
+        // Retry after a short delay
+        async([this]() {
+            Sleep(100);
+            _handleHomeKeyPressWhenReady();
+        });
+        return;
+    }
+    
+    // Everything is ready, proceed with Home key press
+    std::ostringstream logLine;
+    logLine << "[LLKB] calling _handleHomeKeyPress manually";
+    _appendKeymapLog(logLine.str());
+    _handleHomeKeyPress();
+}
+
+// Private method to handle Home key press logic
+void UiApp::_handleHomeKeyPress()
+{
+    std::ostringstream logLine;
+    logLine << "[LLKB] Home key pressed - showing overlay";
+    _appendKeymapLog(logLine.str());
+    
+    // Send ingamemenuKey before showing overlay if configured
+    int ingamemenuKey = getInGameMenuKey();
+    if (ingamemenuKey > 0) {
+        std::ostringstream menuLogLine;
+        menuLogLine << "[LLKB] Sending ingamemenuKey=" << ingamemenuKey << " before overlay.show";
+        _appendKeymapLog(menuLogLine.str());
+        
+        // Send key down
+        sendSynthKey(static_cast<WORD>(ingamemenuKey), true, 0);
+        // Send key up after small delay
+        Sleep(50);
+        sendSynthKey(static_cast<WORD>(ingamemenuKey), false, 0);
+    }
+    
+    HookApp::instance()->overlayConnector()->sendInGameHotkeyDown("overlay.show");
+}
+
 LRESULT CALLBACK UiApp::GetMsgProc(_In_ int nCode, _In_ WPARAM wParam, _In_ LPARAM lParam)
 {
     return HookApp::instance()->uiapp()->hookGetMsgProc(nCode, wParam, lParam);
@@ -489,10 +574,9 @@ LRESULT WINAPI UiApp::WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lPar
 
 // Minimal experimental key remap: map 'Q' to 'W' at low level
 // Installs a WH_KEYBOARD_LL hook and synthesizes 'W' while swallowing 'Q'.
-namespace {
-	HHOOK g_llkbHook = nullptr;
 
-	void sendSynthKey(WORD vk, bool isKeyDown, DWORD scanCodeLike = 0) {
+// Global function to send synthesized key input
+void sendSynthKey(WORD vk, bool isKeyDown, DWORD scanCodeLike) {
 		INPUT input = { 0 };
 		input.type = INPUT_KEYBOARD;
 		input.ki.wVk = vk;
@@ -500,6 +584,9 @@ namespace {
 		input.ki.dwFlags = isKeyDown ? 0 : KEYEVENTF_KEYUP;
 		::SendInput(1, &input, sizeof(INPUT));
 	}
+
+namespace {
+	HHOOK g_llkbHook = nullptr;
 
 		LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 		if (nCode == HC_ACTION && lParam) {
@@ -515,10 +602,8 @@ namespace {
 					// Handle Home/End keys for overlay show/hide
 					if (isKeyDown) {
 						if (p->vkCode == VK_HOME) {
-							std::ostringstream logLine;
-							logLine << "[LLKB] Home key pressed - showing overlay";
-							_appendKeymapLog(logLine.str());
-							HookApp::instance()->overlayConnector()->sendInGameHotkeyDown("overlay.show");
+							// Use the centralized Home key handler
+							HookApp::instance()->uiapp()->_handleHomeKeyPress();
 							return 1; // Consume the key
 						}
 						else if (p->vkCode == VK_END) {
