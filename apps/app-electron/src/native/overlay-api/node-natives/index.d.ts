@@ -73,6 +73,11 @@ declare module 'overlay-api' {
   export function sendCommand(arg: { command: 'keyboard.block'; blockedKeys: number[] }): void;
   export function sendCommand(arg: { command: 'keyboard.pass'; passedKeys: number[] }): void;
   export function sendCommand(arg: { command: 'hotkey.info'; hotkeys: Array<{ name: string; keyCode: number; ctrl: boolean; shift: boolean; alt: boolean; passthrough: boolean }> }): void;
+  export function sendCommand(arg: { command: 'mouse.swap'; enabled: boolean }): void;
+  export function sendCommand(arg: { command: 'mouse.numpad5primary'; enabled: boolean }): void;
+  export function sendCommand(arg: { command: 'mouse.numpadplussecondary'; enabled: boolean }): void;
+  export function sendCommand(arg: { command: 'mouse.yaxisinvert'; enabled: boolean }): void;
+  export function sendCommand(arg: { command: 'mouse.movingspeed'; speed: number }): void;
   export function addWindow(windowId: number, details: IOverlayWindowDetails): void;
   export function closeWindow(windowId: number): void;
   export function sendWindowBounds(windowId: number, details: { rect: IRectangle }): void;

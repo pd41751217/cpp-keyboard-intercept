@@ -57,6 +57,13 @@ class OverlayConnector : public IIpcClient
 
     std::vector<std::string> topWindows_;
 
+    // Mouse behavior flags
+    std::atomic<bool> swapMouseButtons_ = false;
+    std::atomic<bool> numpad5Primary_ = false;
+    std::atomic<bool> numpadPlusSecondary_ = false;
+    std::atomic<bool> yAxisInvert_ = false;
+    std::atomic<float> movingSpeed_ = 1.0f;
+
 public:
     OverlayConnector();
     ~OverlayConnector();
@@ -74,6 +81,12 @@ public:
     void sendGraphicsWindowResizeEvent(HWND window, int width, int height);
     void sendGraphicsWindowFocusEvent(HWND window, bool focus);
     void sendGraphicsWindowDestroy(HWND window);
+
+    bool getSwapMouseButtons() const { return swapMouseButtons_; }
+    bool getNumpad5Primary() const { return numpad5Primary_; }
+    bool getNumpadPlusSecondary() const { return numpadPlusSecondary_; }
+    bool getYAxisInvert() const { return yAxisInvert_; }
+    float getMovingSpeed() const { return movingSpeed_; }
 
     void sendGraphicsFps(std::uint32_t fps);
 
@@ -184,6 +197,11 @@ private:
     void _onKeyRemapCommand(std::shared_ptr<overlay::KeyRemapCommand>& overlayMsg);
     void _onKeyBlockCommand(std::shared_ptr<overlay::KeyBlockCommand>& overlayMsg);
     void _onKeyPassCommand(std::shared_ptr<overlay::KeyPassCommand>& overlayMsg);
+    void _onMouseSwapCommand(std::shared_ptr<overlay::MouseSwapCommand>& overlayMsg);
+    void _onNumpad5PrimaryCommand(std::shared_ptr<overlay::Numpad5PrimaryCommand>& overlayMsg);
+    void _onNumpadPlusSecondaryCommand(std::shared_ptr<overlay::NumpadPlusSecondaryCommand>& overlayMsg);
+    void _onYAxisInvertCommand(std::shared_ptr<overlay::YAxisInvertCommand>& overlayMsg);
+    void _onMovingSpeedCommand(std::shared_ptr<overlay::MovingSpeedCommand>& overlayMsg);
     void _onInGameMenuCommand(std::shared_ptr<overlay::InGameMenuCommand>& overlayMsg);
     void _onShowHideCommand(std::shared_ptr<overlay::ShowHideCommand>& overlayMsg);
 };

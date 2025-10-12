@@ -69,6 +69,9 @@ export class OverlayApiLib {
   private blockedKeys = new Set<number>();
   private interceptMode: 'block_and_replace' | 'block_only' | 'monitor' | 'selective_remap' = 'monitor';
   
+  // Mouse configuration state
+  private swapMouseButtons: boolean = false;
+  
   // Global hotkey handling
   private homeKeyCode = 36; // VK_HOME
   private endKeyCode = 35;  // VK_END
@@ -678,30 +681,77 @@ export class OverlayApiLib {
   // Apply settings from renderer
   private registerSettingsIpc(): void {
     ipcMain.removeAllListeners('overlay:apply-settings');
-    ipcMain.on('overlay:apply-settings', (event, settings: { mappings: Array<{ sourceKey: string; mode: string; targetKey: string }> }) => {
+    ipcMain.on('overlay:apply-settings', (event, settings: { keyboard?: Array<{ sourceKey: string; mode: string; targetKey: string }>; mouse?: { swapButtons?: boolean; numpad5Primary?: boolean; numpadPlusSecondary?: boolean; yAxisInvert?: boolean; movingSpeed?: number } }) => {
       try {
-        this.applyKeyboardSettings(settings);
+        if (settings.keyboard) {
+          this.applyKeyboardSettings(settings.keyboard);
+        }
+        if (settings.mouse) {
+          this.applyMouseSettings(settings.mouse);
+        }
       } catch (e) {
         console.error('Failed to apply settings:', e);
       }
     });
   }
 
-  private applyKeyboardSettings(settings: { mappings: Array<{ sourceKey: string; mode: string; targetKey: string }> }): void {
+  private applyMouseSettings(mouse: { swapButtons?: boolean; numpad5Primary?: boolean; numpadPlusSecondary?: boolean; yAxisInvert?: boolean; movingSpeed?: number }): void {
+    try {
+      // Swap primary/secondary buttons (handled in native/game layer)
+      if (mouse.swapButtons !== undefined) {
+        this.overlayApi.sendCommand({ command: 'mouse.swap', enabled: !!mouse.swapButtons } as any);
+      }
+      
+      // Numpad 5 as primary button (handled in native/game layer)
+      if (mouse.numpad5Primary !== undefined) {
+        console.log('[MouseSettings] Sending numpad5Primary command:', !!mouse.numpad5Primary);
+        this.overlayApi.sendCommand({ command: 'mouse.numpad5primary', enabled: !!mouse.numpad5Primary } as any);
+      }
+      
+      // Numpad + as secondary button (handled in native/game layer)
+      if (mouse.numpadPlusSecondary !== undefined) {
+        console.log('[MouseSettings] Sending numpadPlusSecondary command:', !!mouse.numpadPlusSecondary);
+        this.overlayApi.sendCommand({ command: 'mouse.numpadplussecondary', enabled: !!mouse.numpadPlusSecondary } as any);
+      }
+
+      // Y-axis revert (handled in native/game layer)
+      if (mouse.yAxisInvert !== undefined) {
+        console.log('[MouseSettings] Sending yAxisInvert command:', !!mouse.yAxisInvert);
+        this.overlayApi.sendCommand({ command: 'mouse.yaxisinvert', enabled: !!mouse.yAxisInvert } as any);
+      }
+
+      // Moving speed (handled in native/game layer)
+      if (mouse.movingSpeed !== undefined) {
+        // Clamp speed to valid range (0.1 - 5.0)
+        const clampedSpeed = Math.max(0.1, Math.min(5.0, mouse.movingSpeed));
+        if (clampedSpeed !== mouse.movingSpeed) {
+          console.warn('[MouseSettings] Moving speed clamped from', mouse.movingSpeed, 'to', clampedSpeed);
+        }
+        console.log('[MouseSettings] Sending movingSpeed command:', clampedSpeed);
+        this.overlayApi.sendCommand({ command: 'mouse.movingspeed', speed: clampedSpeed } as any);
+      }
+      
+      // TODO: Wire additional mouse settings in later steps
+    } catch (err) {
+      console.error('[MouseSettings] Failed to apply mouse settings', err);
+    }
+  }
+
+  private applyKeyboardSettings(keyboard: Array<{ sourceKey: string; mode: string; targetKey: string }>): void {
     // Clear current config
     this.keyMappings.clear();
     this.blockedKeys.clear();
 
     const toVk = (name?: string): number | null => (name ? this.mapKeyNameToVirtualKey(name) : null);
 
-    console.log('[KeyboardSettings] Processing mappings:', settings?.mappings?.length || 0);
+    console.log('[KeyboardSettings] Processing mappings:', keyboard?.length || 0);
 
     // Separate keys by mode
     const remapMappings: Record<number, number> = {};
     const blockedKeys: number[] = [];
     const passedKeys: number[] = [];
 
-    for (const m of settings?.mappings || []) {
+    for (const m of keyboard || []) {
       const sourceVk = toVk(m.sourceKey);
       if (!sourceVk) {
         console.log('[KeyboardSettings] Invalid source key:', m.sourceKey);

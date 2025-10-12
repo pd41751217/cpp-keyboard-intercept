@@ -495,6 +495,7 @@ bool OverlayConnector::processMouseMessage(UINT message, WPARAM wParam, LPARAM l
             mousePointinWindowClient.x -= window->rect.x;
             mousePointinWindowClient.y -= window->rect.y;
 
+
             // alpha test
             if (window->transparent)
             {
@@ -1065,6 +1066,11 @@ break;
             OVERLAY_DISPATCH("command.keyremap", KeyRemapCommand);
             OVERLAY_DISPATCH("command.keyblock", KeyBlockCommand);
             OVERLAY_DISPATCH("command.keypass", KeyPassCommand);
+            OVERLAY_DISPATCH("command.mouse.swap", MouseSwapCommand);
+OVERLAY_DISPATCH("command.mouse.numpad5primary", Numpad5PrimaryCommand);
+OVERLAY_DISPATCH("command.mouse.numpadplussecondary", NumpadPlusSecondaryCommand);
+OVERLAY_DISPATCH("command.mouse.yaxisinvert", YAxisInvertCommand);
+OVERLAY_DISPATCH("command.mouse.movingspeed", MovingSpeedCommand);
             OVERLAY_DISPATCH("command.game.ingamemenu", InGameMenuCommand);
             OVERLAY_DISPATCH("command.showhide", ShowHideCommand);
         default:
@@ -1336,6 +1342,49 @@ void OverlayConnector::_onInGameMenuCommand(std::shared_ptr<overlay::InGameMenuC
 
     HookApp::instance()->uiapp()->async([keyCode = overlayMsg->keyCode]() {
         HookApp::instance()->uiapp()->setInGameMenuKey(keyCode);
+    });
+}
+
+void OverlayConnector::_onMouseSwapCommand(std::shared_ptr<overlay::MouseSwapCommand>& overlayMsg)
+{
+    __trace__ << "Swap mouse buttons: " << overlayMsg->enabled;
+    HookApp::instance()->uiapp()->async([this, enabled = overlayMsg->enabled]() {
+        swapMouseButtons_ = enabled;
+    });
+}
+
+void OverlayConnector::_onNumpad5PrimaryCommand(std::shared_ptr<overlay::Numpad5PrimaryCommand>& overlayMsg)
+{
+    __trace__ << "Numpad 5 as primary button: " << overlayMsg->enabled;
+    HookApp::instance()->uiapp()->async([this, enabled = overlayMsg->enabled]() {
+        numpad5Primary_ = enabled;
+    });
+}
+
+void OverlayConnector::_onNumpadPlusSecondaryCommand(std::shared_ptr<overlay::NumpadPlusSecondaryCommand>& overlayMsg)
+{
+    __trace__ << "Numpad + as secondary button: " << overlayMsg->enabled;
+    HookApp::instance()->uiapp()->async([this, enabled = overlayMsg->enabled]() {
+        numpadPlusSecondary_ = enabled;
+    });
+}
+
+void OverlayConnector::_onYAxisInvertCommand(std::shared_ptr<overlay::YAxisInvertCommand>& overlayMsg)
+{
+    __trace__ << "Y-axis revert: " << overlayMsg->enabled;
+    HookApp::instance()->uiapp()->async([this, enabled = overlayMsg->enabled]() {
+        yAxisInvert_ = enabled;
+    });
+}
+
+void OverlayConnector::_onMovingSpeedCommand(std::shared_ptr<overlay::MovingSpeedCommand>& overlayMsg)
+{
+    // Clamp speed to valid range (0.1 - 5.0)
+    float clampedSpeed = std::max(0.1f, std::min(5.0f, overlayMsg->speed));
+    
+    __trace__ << "Moving speed: " << overlayMsg->speed << " (clamped to: " << clampedSpeed << ")";
+    HookApp::instance()->uiapp()->async([this, speed = clampedSpeed]() {
+        movingSpeed_ = speed;
     });
 }
 

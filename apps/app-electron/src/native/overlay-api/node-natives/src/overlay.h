@@ -704,6 +704,111 @@ public:
             
             this->_sendMessage(&message);
         }
+        else if (command == "mouse.swap")
+        {
+            overlay::MouseSwapCommand message;
+            if (commandInfo.Has("enabled"))
+            {
+                message.enabled = commandInfo.Get("enabled").ToBoolean();
+            }
+            this->_sendMessage(&message);
+        }
+        else if (command == "mouse.numpad5primary")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received mouse.numpad5primary command" << std::endl;
+                }
+            } catch (...) {
+            }
+            
+            overlay::Numpad5PrimaryCommand message;
+            if (commandInfo.Has("enabled"))
+            {
+                message.enabled = commandInfo.Get("enabled").ToBoolean();
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] mouse.numpad5primary enabled=" << (message.enabled ? "true" : "false") << std::endl;
+                    }
+                } catch (...) {
+                }
+            }
+            this->_sendMessage(&message);
+        }
+        else if (command == "mouse.numpadplussecondary")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received mouse.numpadplussecondary command" << std::endl;
+                }
+            } catch (...) {
+            }
+
+            overlay::NumpadPlusSecondaryCommand message;
+            if (commandInfo.Has("enabled"))
+            {
+                message.enabled = commandInfo.Get("enabled").ToBoolean();
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] mouse.numpadplussecondary enabled=" << (message.enabled ? "true" : "false") << std::endl;
+                    }
+                } catch (...) {
+                }
+            }
+            this->_sendMessage(&message);
+        }
+        else if (command == "mouse.yaxisinvert")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received mouse.yaxisinvert command" << std::endl;
+                }
+            } catch (...) {
+            }
+
+            overlay::YAxisInvertCommand message;
+            if (commandInfo.Has("enabled"))
+            {
+                message.enabled = commandInfo.Get("enabled").ToBoolean();
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] mouse.yaxisinvert enabled=" << (message.enabled ? "true" : "false") << std::endl;
+                    }
+                } catch (...) {
+                }
+            }
+            this->_sendMessage(&message);
+        }
+        else if (command == "mouse.movingspeed")
+        {
+            try {
+                std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                if (ofs.is_open()) {
+                    ofs << "[NodeAddon] Received mouse.movingspeed command" << std::endl;
+                }
+            } catch (...) {
+            }
+
+            overlay::MovingSpeedCommand message;
+            if (commandInfo.Has("speed"))
+            {
+                message.speed = static_cast<float>(commandInfo.Get("speed").ToNumber());
+                try {
+                    std::ofstream ofs("C:\\cpp-keyboard-intercept\\node-addon.log", std::ios::app);
+                    if (ofs.is_open()) {
+                        ofs << "[NodeAddon] mouse.movingspeed speed=" << message.speed << std::endl;
+                    }
+                } catch (...) {
+                }
+            }
+            this->_sendMessage(&message);
+        }
         else if (command == "game.ingamemenu")
         {
             try {

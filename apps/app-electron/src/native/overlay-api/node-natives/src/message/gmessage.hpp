@@ -259,6 +259,46 @@ namespace overlay
 
     JSON_AUTO(KeyPassCommand, type, passedKeys)
 
+    struct MouseSwapCommand : public GMessage
+    {
+        GMESSAGE_AUTO("command.mouse.swap");
+        bool enabled = false;
+    };
+
+    JSON_AUTO(MouseSwapCommand, type, enabled)
+
+    struct Numpad5PrimaryCommand : public GMessage
+    {
+        GMESSAGE_AUTO("command.mouse.numpad5primary");
+        bool enabled = false;
+    };
+
+    JSON_AUTO(Numpad5PrimaryCommand, type, enabled)
+
+struct NumpadPlusSecondaryCommand : public GMessage
+{
+    GMESSAGE_AUTO("command.mouse.numpadplussecondary");
+    bool enabled = false;
+};
+
+JSON_AUTO(NumpadPlusSecondaryCommand, type, enabled)
+
+struct YAxisInvertCommand : public GMessage
+{
+    GMESSAGE_AUTO("command.mouse.yaxisinvert");
+    bool enabled = false;
+};
+
+JSON_AUTO(YAxisInvertCommand, type, enabled)
+
+struct MovingSpeedCommand : public GMessage
+{
+    GMESSAGE_AUTO("command.mouse.movingspeed");
+    float speed = 1.0f;
+};
+
+JSON_AUTO(MovingSpeedCommand, type, speed)
+
     struct InGameMenuCommand : public GMessage
     {
         GMESSAGE_AUTO("command.game.ingamemenu");

@@ -214,8 +214,73 @@ HCURSOR WINAPI H_GetCursor()
 UINT WINAPI H_GetRawInputData(HRAWINPUT hRawInput, UINT uiCommand, LPVOID pData, PUINT pcbSize, UINT cbSizeHeader)
 {
     UINT ret = 0;
-    if (HookApp::instance()->uiapp()->isInterceptingInput())
+    
+    
+    // Check if we should apply mouse modifications
+    float movingSpeed = HookApp::instance()->overlayConnector()->getMovingSpeed();
+    bool yAxisInvert = HookApp::instance()->overlayConnector()->getYAxisInvert();
+    bool shouldModifySpeed = (movingSpeed != 1.0f) && HookApp::instance()->uiapp() && session::overlayEnabled() && session::graphicsActive();
+    bool shouldInvertY = yAxisInvert && HookApp::instance()->uiapp() && session::overlayEnabled() && session::graphicsActive();
+    bool shouldModifyInput = (shouldModifySpeed || shouldInvertY) && uiCommand == RID_INPUT && pData && pcbSize;
+    
+    if (shouldModifyInput)
     {
+        // Get the size first
+        UINT size = 0;
+        Windows::OrginalApi::GetRawInputData(hRawInput, RID_INPUT, nullptr, &size, cbSizeHeader);
+        
+        if (size > 0 && size <= *pcbSize)
+        {
+            // Get the raw input data
+            RAWINPUT* rawInput = (RAWINPUT*)malloc(size);
+            if (rawInput)
+            {
+                UINT actualSize = Windows::OrginalApi::GetRawInputData(hRawInput, RID_INPUT, rawInput, &size, cbSizeHeader);
+                
+                if (actualSize > 0 && rawInput->header.dwType == RIM_TYPEMOUSE)
+                {
+                    
+                    // Check if this is mouse movement (not button clicks)
+                    // usFlags can be 0 for relative mouse movement, so we check if there's actual movement
+                    if (rawInput->data.mouse.lLastX != 0 || rawInput->data.mouse.lLastY != 0)
+                    {
+                        // Apply speed multiplier to mouse movement deltas
+                        if (shouldModifySpeed)
+                        {
+                            rawInput->data.mouse.lLastX = (LONG)(rawInput->data.mouse.lLastX * movingSpeed);
+                            rawInput->data.mouse.lLastY = (LONG)(rawInput->data.mouse.lLastY * movingSpeed);
+                        }
+                        
+                        // Apply Y-axis inversion
+                        if (shouldInvertY)
+                        {
+                            rawInput->data.mouse.lLastY = -rawInput->data.mouse.lLastY;
+                        }
+                    }
+                }
+                
+                // Copy modified data to output buffer
+                memcpy(pData, rawInput, actualSize);
+                *pcbSize = actualSize;
+                ret = actualSize;
+                
+                free(rawInput);
+            }
+            else
+            {
+                // Fallback to original API if malloc fails
+                ret = Windows::OrginalApi::GetRawInputData(hRawInput, uiCommand, pData, pcbSize, cbSizeHeader);
+            }
+        }
+        else
+        {
+            // Fallback to original API
+            ret = Windows::OrginalApi::GetRawInputData(hRawInput, uiCommand, pData, pcbSize, cbSizeHeader);
+        }
+    }
+    else if (HookApp::instance()->uiapp()->isInterceptingInput())
+    {
+        // Original blocking behavior when intercepting input
         if (pcbSize)
         {
             if (pData == nullptr)
@@ -235,8 +300,10 @@ UINT WINAPI H_GetRawInputData(HRAWINPUT hRawInput, UINT uiCommand, LPVOID pData,
     }
     else
     {
+        // Normal pass-through
         ret = Windows::OrginalApi::GetRawInputData(hRawInput, uiCommand, pData, pcbSize, cbSizeHeader);
     }
+    
     return ret;
 }
 
@@ -324,7 +391,15 @@ bool InputHook::hook()
     DoInputHook(g_hUser32, SetCursor);
     DoInputHook(g_hUser32, GetCursor);
 
-    // DoInputHook(g_hUser32, GetRawInputData);
+    // Manually create GetRawInputData hook instead of using macro
+    T_GetRawInputData = (pfnGetRawInputData)GetProcAddress(g_hUser32, "GetRawInputData");
+    if (T_GetRawInputData) {
+        g_inputHooks.m_GetRawInputDataHook.reset(new ApiHook<pfnGetRawInputData>(L"GetRawInputData", (DWORD_PTR*)T_GetRawInputData, (DWORD_PTR*)H_GetRawInputData));
+        result &= g_inputHooks.m_GetRawInputDataHook->activeHook();
+    } else {
+        result = false;
+    }
+    
     // DoInputHook(g_hUser32, GetRawInputBuffer);
 
     HookApp::instance()->overlayConnector()->sendInputHookInfo(result);

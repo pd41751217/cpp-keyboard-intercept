@@ -587,8 +587,10 @@ void sendSynthKey(WORD vk, bool isKeyDown, DWORD scanCodeLike) {
 
 namespace {
 	HHOOK g_llkbHook = nullptr;
+	HHOOK g_llmHook = nullptr;
+	static const ULONG_PTR kMouseSwapTag = 0x4D535741; // 'MSWA'
 
-		LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+	LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 		if (nCode == HC_ACTION && lParam) {
 			const KBDLLHOOKSTRUCT* p = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
 			if (HookApp::instance()->uiapp() && session::overlayEnabled() && session::graphicsActive()) {
@@ -652,6 +654,60 @@ namespace {
                                 sendSynthKey(static_cast<WORD>(remapped), isKeyDown, p->scanCode);
                                 return 1; // Consume original key, send remapped key
                             }
+                            
+                            // Check if Numpad 5 should act as primary mouse button
+                            if (p->vkCode == VK_NUMPAD5 && HookApp::instance()->overlayConnector()->getNumpad5Primary()) {
+                                logLine << "[LLKB] vk=" << p->vkCode << (isKeyDown ? " DOWN" : (isKeyUp ? " UP" : "")) << " -> LEFT MOUSE BUTTON";
+                                _appendKeymapLog(logLine.str());
+                                
+                                // Get current mouse position for the mouse message
+                                POINT mousePt;
+                                GetCursorPos(&mousePt);
+                                HWND gameWindow = HookApp::instance()->uiapp()->window();
+                                ScreenToClient(gameWindow, &mousePt);
+                                LPARAM mouseLParam = MAKELPARAM(static_cast<UINT>(mousePt.x), static_cast<UINT>(mousePt.y));
+                                
+                                // Send mouse button message using PostMessageW (same as mouse swap)
+                                UINT mouseMsg = 0;
+                                WPARAM mouseWParam = 0;
+                                if (isKeyDown) {
+                                    mouseMsg = WM_LBUTTONDOWN;
+                                    mouseWParam = MK_LBUTTON;
+                                } else if (isKeyUp) {
+                                    mouseMsg = WM_LBUTTONUP;
+                                    mouseWParam = 0;
+                                }
+                                
+                                PostMessageW(gameWindow, mouseMsg, mouseWParam, mouseLParam);
+                                return 1; // Consume the Numpad 5 key
+                            }
+                            
+                            // Check if Numpad + should act as secondary mouse button
+                            if (p->vkCode == VK_ADD && HookApp::instance()->overlayConnector()->getNumpadPlusSecondary()) {
+                                logLine << "[LLKB] vk=" << p->vkCode << (isKeyDown ? " DOWN" : (isKeyUp ? " UP" : "")) << " -> RIGHT MOUSE BUTTON";
+                                _appendKeymapLog(logLine.str());
+                                
+                                // Get current mouse position for the mouse message
+                                POINT mousePt;
+                                GetCursorPos(&mousePt);
+                                HWND gameWindow = HookApp::instance()->uiapp()->window();
+                                ScreenToClient(gameWindow, &mousePt);
+                                LPARAM mouseLParam = MAKELPARAM(static_cast<UINT>(mousePt.x), static_cast<UINT>(mousePt.y));
+                                
+                                // Send mouse button message using PostMessageW (same as mouse swap)
+                                UINT mouseMsg = 0;
+                                WPARAM mouseWParam = 0;
+                                if (isKeyDown) {
+                                    mouseMsg = WM_RBUTTONDOWN;
+                                    mouseWParam = MK_RBUTTON;
+                                } else if (isKeyUp) {
+                                    mouseMsg = WM_RBUTTONUP;
+                                    mouseWParam = 0;
+                                }
+                                
+                                PostMessageW(gameWindow, mouseMsg, mouseWParam, mouseLParam);
+                                return 1; // Consume the Numpad + key
+                            }
 						}
 					}
 				}
@@ -660,6 +716,262 @@ namespace {
 		// pass through
 		return CallNextHookEx(g_llkbHook, nCode, wParam, lParam);
 	}
+
+    LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+		if (nCode == HC_ACTION && lParam) {
+			// Begin detailed logging block
+			try {
+				std::ofstream ofs("C:\\cpp-keyboard-intercept\\mouse-swap-debug.log", std::ios::app);
+				if (ofs.is_open()) {
+					ofs << "[MouseSwap] --- Hook ENTER ---" << std::endl;
+					ofs << "[MouseSwap] nCode=" << nCode << ", wParam=" << wParam << ", lParam!=NULL" << std::endl;
+				}
+			} catch (...) {}
+			const MSLLHOOKSTRUCT* p = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
+			// Pass through our own synthetic events (identified by tag)
+			if (p->dwExtraInfo == kMouseSwapTag) {
+				try {
+					std::ofstream ofs("C:\\cpp-keyboard-intercept\\mouse-swap-debug.log", std::ios::app);
+					if (ofs.is_open()) {
+						const char* msg = "UNKNOWN";
+						if (wParam == WM_LBUTTONDOWN) msg = "WM_LBUTTONDOWN";
+						else if (wParam == WM_LBUTTONUP) msg = "WM_LBUTTONUP";
+						else if (wParam == WM_RBUTTONDOWN) msg = "WM_RBUTTONDOWN";
+						else if (wParam == WM_RBUTTONUP) msg = "WM_RBUTTONUP";
+						ofs << "[MouseSwap] Tagged synthetic detected (" << msg << ") -> pass through" << std::endl;
+					}
+				} catch (...) {}
+				return CallNextHookEx(g_llmHook, nCode, wParam, lParam);
+			}
+			if (HookApp::instance()->uiapp() && session::overlayEnabled() && session::graphicsActive()) {
+				// Only apply mouse swap when the game window is in foreground
+				HWND foregroundWindow = GetForegroundWindow();
+				HWND gameWindow = HookApp::instance()->uiapp()->window();
+				try {
+					std::ofstream ofs("C:\\cpp-keyboard-intercept\\mouse-swap-debug.log", std::ios::app);
+					if (ofs.is_open()) {
+						ofs << "[MouseSwap] fgWnd=" << foregroundWindow << ", gameWnd=" << gameWindow << (foregroundWindow == gameWindow ? " (FOREGROUND)" : " (NOT FG)") << std::endl;
+					}
+				} catch (...) {}
+				if (foregroundWindow == gameWindow) {
+					// Check if moving speed adjustment is enabled
+					// float movingSpeed = HookApp::instance()->overlayConnector()->getMovingSpeed();
+					// if (movingSpeed != 1.0f && wParam == WM_MOUSEMOVE) {
+					// 	// Handle moving speed adjustment for mouse movement
+					// 	// Get the current mouse position
+					// 	POINT currentPos = p->pt;
+						
+					// 	// Get the game window client area
+					// 	RECT clientRect;
+					// 	GetClientRect(gameWindow, &clientRect);
+						
+					// 	// Convert screen coordinates to client coordinates
+					// 	POINT clientPos = currentPos;
+					// 	ScreenToClient(gameWindow, &clientPos);
+						
+					// 	// Apply moving speed multiplier to the position
+					// 	// For speed adjustment, we need to track the previous position
+					// 	// and calculate the delta, then multiply by speed
+					// 	static POINT lastClientPos = {0, 0};
+					// 	static bool firstMove = true;
+						
+					// 	if (!firstMove) {
+					// 		// Calculate movement delta
+					// 		int deltaX = clientPos.x - lastClientPos.x;
+					// 		int deltaY = clientPos.y - lastClientPos.y;
+							
+					// 		// Apply speed multiplier to delta
+					// 		int adjustedDeltaX = static_cast<int>(deltaX * movingSpeed);
+					// 		int adjustedDeltaY = static_cast<int>(deltaY * movingSpeed);
+							
+					// 		// Calculate new position based on adjusted delta
+					// 		int newX = lastClientPos.x + adjustedDeltaX;
+					// 		int newY = lastClientPos.y + adjustedDeltaY;
+							
+					// 		// Clamp to window bounds
+					// 		newX = std::max(0, std::min(newX, static_cast<int>(clientRect.right - 1)));
+					// 		newY = std::max(0, std::min(newY, static_cast<int>(clientRect.bottom - 1)));
+							
+					// 		// Convert adjusted client position back to screen coordinates
+					// 		POINT adjustedScreenPos = { newX, newY };
+					// 		ClientToScreen(gameWindow, &adjustedScreenPos);
+							
+					// 		// Set the real cursor position using SetCursorPos
+					// 		SetCursorPos(adjustedScreenPos.x, adjustedScreenPos.y);
+							
+					// 		// Create the adjusted mouse position
+					// 		LPARAM adjustedLParam = MAKELPARAM(static_cast<UINT>(newX), static_cast<UINT>(newY));
+							
+					// 		// Send the adjusted mouse movement using PostMessageW
+					// 		WPARAM mouseWParam = 0;
+					// 		if (p->flags & LLMHF_INJECTED) {
+					// 			mouseWParam = 0;
+					// 		}
+							
+					// 		// Log the moving speed adjustment
+					// 		try {
+					// 			std::ofstream ofs("C:\\cpp-keyboard-intercept\\moving-speed.log", std::ios::app);
+					// 			if (ofs.is_open()) {
+					// 				ofs << "[MovingSpeed] Speed: " << movingSpeed 
+                    //                     << " last pos: (" << lastClientPos.x << "," << lastClientPos.y << ")"
+                    //                     << " current pos: (" << clientPos.x << "," << clientPos.y << ")"
+					// 					<< ", Delta: (" << deltaX << "," << deltaY << ")"
+					// 					<< ", Adjusted: (" << adjustedDeltaX << "," << adjustedDeltaY << ")"
+					// 					<< ", New Pos: (" << newX << "," << newY << ")"
+					// 					<< ", Screen Pos: (" << adjustedScreenPos.x << "," << adjustedScreenPos.y << ")" << std::endl;
+					// 			}
+					// 		} catch (...) {}
+							
+					// 		PostMessageW(gameWindow, WM_MOUSEMOVE, mouseWParam, adjustedLParam);
+							
+					// 		// Update last position to the adjusted position
+					// 		lastClientPos.x = newX;
+					// 		lastClientPos.y = newY;
+							
+					// 		return 1; // Consume original input
+					// 	} else {
+					// 		// First move - just record the position
+					// 		lastClientPos = clientPos;
+					// 		firstMove = false;
+					// 		return 1; // Consume original input
+					// 	}
+					// }
+					
+					// Check if Y-axis reversion is enabled
+					// if (HookApp::instance()->overlayConnector()->getYAxisInvert()) {
+					// 	// Handle Y-axis reversion for mouse movement
+					// 	if (wParam == WM_MOUSEMOVE) {
+					// 		// Get the current mouse position
+					// 		POINT currentPos = p->pt;
+							
+					// 		// Get the game window client area
+					// 		RECT clientRect;
+					// 		GetClientRect(gameWindow, &clientRect);
+							
+					// 		// Convert screen coordinates to client coordinates
+					// 		POINT clientPos = currentPos;
+					// 		ScreenToClient(gameWindow, &clientPos);
+							
+					// 		// Invert the Y coordinate
+					// 		int invertedY = clientRect.bottom - clientPos.y;
+							
+					// 		// Create the inverted mouse position in client coordinates
+					// 		LPARAM invertedLParam = MAKELPARAM(static_cast<UINT>(clientPos.x), static_cast<UINT>(invertedY));
+							
+					// 		// Send the inverted mouse movement using PostMessageW
+					// 		// For WM_MOUSEMOVE, wParam contains the key state flags
+					// 		WPARAM mouseWParam = 0;
+					// 		if (p->flags & LLMHF_INJECTED) {
+					// 			// If this is an injected event, we might want to preserve some flags
+					// 			mouseWParam = 0; // For mouse move, typically no special flags
+					// 		}
+							
+					// 		PostMessageW(gameWindow, WM_MOUSEMOVE, mouseWParam, invertedLParam);
+							
+					// 		// Log the Y-axis reversion
+					// 		try {
+					// 			std::ofstream ofs("C:\\cpp-keyboard-intercept\\yaxis-revert.log", std::ios::app);
+					// 			if (ofs.is_open()) {
+					// 				ofs << "[YAxisInvert] Original Y: " << currentPos.y 
+					// 					<< ", Client Y: " << clientPos.y 
+					// 					<< ", Inverted Client Y: " << invertedY 
+					// 					<< ", flags: " << p->flags << std::endl;
+					// 			}
+					// 		} catch (...) {}
+							
+					// 		return 1; // Consume original input
+					// 	}
+					// }
+					
+					// Check if mouse button swapping is enabled
+					if (HookApp::instance()->overlayConnector()->getSwapMouseButtons()) {
+						// Handle mouse button swapping
+						if (wParam == WM_LBUTTONDOWN || wParam == WM_LBUTTONUP || 
+							wParam == WM_RBUTTONDOWN || wParam == WM_RBUTTONUP) {
+							
+							// Create synthetic mouse input with swapped buttons
+							INPUT input = { 0 };
+							input.type = INPUT_MOUSE;
+							input.mi.mouseData = 0;
+							input.mi.dwExtraInfo = kMouseSwapTag; // tag our synthetic event
+							input.mi.time = 0;
+							
+							// Use relative coordinates (no position change)
+							input.mi.dx = 0;
+							input.mi.dy = 0;
+							
+							// Set appropriate flags for button events only (no move event)
+							input.mi.dwFlags = 0;
+							
+							// Swap the button flags
+							if (wParam == WM_LBUTTONDOWN) {
+								input.mi.dwFlags |= MOUSEEVENTF_RIGHTDOWN;
+							} else if (wParam == WM_LBUTTONUP) {
+								input.mi.dwFlags |= MOUSEEVENTF_RIGHTUP;
+							} else if (wParam == WM_RBUTTONDOWN) {
+								input.mi.dwFlags |= MOUSEEVENTF_LEFTDOWN;
+							} else if (wParam == WM_RBUTTONUP) {
+								input.mi.dwFlags |= MOUSEEVENTF_LEFTUP;
+							}
+							
+							// Debug logging
+							try {
+								std::ofstream ofs("C:\\cpp-keyboard-intercept\\mouse-swap-debug.log", std::ios::app);
+								if (ofs.is_open()) {
+									const char* originalMsg = "UNKNOWN";
+									if (wParam == WM_LBUTTONDOWN) originalMsg = "WM_LBUTTONDOWN";
+									else if (wParam == WM_LBUTTONUP) originalMsg = "WM_LBUTTONUP";
+									else if (wParam == WM_RBUTTONDOWN) originalMsg = "WM_RBUTTONDOWN";
+									else if (wParam == WM_RBUTTONUP) originalMsg = "WM_RBUTTONUP";
+									const char* swappedMsg = "UNKNOWN";
+									if (input.mi.dwFlags & MOUSEEVENTF_LEFTDOWN) swappedMsg = "MOUSEEVENTF_LEFTDOWN";
+									else if (input.mi.dwFlags & MOUSEEVENTF_LEFTUP) swappedMsg = "MOUSEEVENTF_LEFTUP";
+									else if (input.mi.dwFlags & MOUSEEVENTF_RIGHTDOWN) swappedMsg = "MOUSEEVENTF_RIGHTDOWN";
+									else if (input.mi.dwFlags & MOUSEEVENTF_RIGHTUP) swappedMsg = "MOUSEEVENTF_RIGHTUP";
+									ofs << "[MouseSwap] Injecting swapped input: Original=" << originalMsg << ", Swapped=" << swappedMsg << std::endl;
+								}
+							} catch (...) {}
+							
+							// Send the swapped mouse input using PostMessage (temporary approach)
+							//::SendInput(1, &input, sizeof(INPUT));
+                            UINT swappedMsg = 0;
+							WPARAM swappedWParam = 0;
+							if (wParam == WM_LBUTTONDOWN) { swappedMsg = WM_RBUTTONDOWN; swappedWParam = MK_RBUTTON; }
+							else if (wParam == WM_LBUTTONUP) { swappedMsg = WM_RBUTTONUP; swappedWParam = 0; }
+							else if (wParam == WM_RBUTTONDOWN) { swappedMsg = WM_LBUTTONDOWN; swappedWParam = MK_LBUTTON; }
+							else if (wParam == WM_RBUTTONUP) { swappedMsg = WM_LBUTTONUP; swappedWParam = 0; }
+
+							POINT clientPt{ p->pt.x, p->pt.y };
+							ScreenToClient(gameWindow, &clientPt);
+							LPARAM swappedLParam = MAKELPARAM(static_cast<UINT>(clientPt.x), static_cast<UINT>(clientPt.y));
+
+							PostMessageW(gameWindow, swappedMsg, swappedWParam, swappedLParam);
+							try {
+								std::ofstream ofs("C:\\cpp-keyboard-intercept\\mouse-swap-debug.log", std::ios::app);
+								if (ofs.is_open()) {
+									const char* swappedMsgName = (swappedMsg == WM_LBUTTONDOWN ? "WM_LBUTTONDOWN" :
+										swappedMsg == WM_LBUTTONUP ? "WM_LBUTTONUP" :
+										swappedMsg == WM_RBUTTONDOWN ? "WM_RBUTTONDOWN" :
+										swappedMsg == WM_RBUTTONUP ? "WM_RBUTTONUP" : "UNKNOWN");
+									ofs << "[MouseSwap] PostMessage sent: " << swappedMsgName
+										<< " wParam=" << swappedWParam
+										<< " lParam=(" << clientPt.x << "," << clientPt.y << ")" << std::endl;
+								}
+							} catch (...) {}
+							
+							return 1; // Consume original input
+						}
+					}
+				}
+			}
+		}
+		// pass through
+		try {
+			std::ofstream ofs("C:\\cpp-keyboard-intercept\\mouse-swap-debug.log", std::ios::app);
+			if (ofs.is_open()) ofs << "[MouseSwap] pass-through path" << std::endl;
+		} catch (...) {}
+		return CallNextHookEx(g_llmHook, nCode, wParam, lParam);
+	}
 }
 
 LRESULT UiApp::hookWindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
@@ -667,6 +979,10 @@ LRESULT UiApp::hookWindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	if (!g_llkbHook && session::graphicsActive())
 	{
 		g_llkbHook = ::SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandleW(NULL), 0);
+	}
+	if (!g_llmHook && session::graphicsActive())
+	{
+		g_llmHook = ::SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, GetModuleHandleW(NULL), 0);
 	}
     if (!session::overlayEnabled())
     {
